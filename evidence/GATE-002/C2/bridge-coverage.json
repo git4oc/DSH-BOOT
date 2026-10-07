@@ -1,0 +1,12 @@
+{
+  "registerHits": {
+    "count": 1,
+    "files": [
+      "D:/proJects/dsh-boot/packages/domain-bridge/src/register.ts"
+    ]
+  },
+  "restrictHits": {
+    "count": 0,
+    "files": []
+  }
+}

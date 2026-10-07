@@ -1,0 +1,9 @@
+{
+  "endpoints": {
+    "/internal/kernel/llm/stream": 400,
+    "/internal/kernel/llm/models": 400,
+    "/internal/kernel/llm/resolve-model": 400,
+    "/internal/kernel/llm/prepare-call": 400
+  },
+  "all400": true
+}

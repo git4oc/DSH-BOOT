@@ -1,0 +1,11 @@
+{
+  "before": [
+    "mcp_tool_a"
+  ],
+  "after": [
+    "mcp_tool_a"
+  ],
+  "allowlist": [
+    "mcp_tool_a"
+  ]
+}

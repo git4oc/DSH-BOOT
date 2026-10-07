@@ -1,0 +1,6 @@
+{
+  "withoutGuard": true,
+  "withGuardDenied": true,
+  "afterRemoval": true,
+  "restrictCount": 0
+}

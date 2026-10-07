@@ -1,0 +1,15 @@
+{
+  "name": "@dsh-boot/domain-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "工具注册桥、LlmAdapter 适配器、审批应答者、SessionPersistence 提供方（ENG-020）。恰好 4 个反转面，见 LAYER-001 §5（ENG-024）。",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@dsh-boot/protocol": "workspace:*"
+  }
+}

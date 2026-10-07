@@ -1,0 +1,11 @@
+node_modules/
+.pnpm-store/
+.acl-recovery/
+*.tsbuildinfo
+*.log
+spec-lint-report.json
+docs-lint-report.json
+deps-report.json
+id-format-report.json
+.DS_Store
+Thumbs.db

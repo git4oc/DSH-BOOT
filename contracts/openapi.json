@@ -1,0 +1,706 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DSH 企业级平台 OpenAPI",
+    "version": "1.0.0",
+    "description": "产品壳的唯一对外契约。设计文档 §6.1；SPEC-04 的用户契约与 SPEC-01 的安全约束在本契约上落地。\n\n`packages/sdk` 由本文件生成，**不手写**（SPEC-03 ENG-020）。\n\n本文件为 JSON 序列化的 OpenAPI 3.1——与 YAML 等价，且可零依赖用 `JSON.parse` 校验。",
+    "x-ov-authority": "spec/00-规格总纲.md",
+    "x-ov-upstream": "DSH企业级技术方案设计.md v2.6 §6.1"
+  },
+
+  "servers": [
+    { "url": "https://{tenant}.api.example.invalid", "variables": { "tenant": { "default": "acme" } } }
+  ],
+
+  "security": [{ "bearerAuth": [] }],
+
+  "tags": [
+    { "name": "catalog", "description": "场景与目录发现" },
+    { "name": "workspaces", "description": "工作区（域外自建的真源，D14）" },
+    { "name": "sessions", "description": "会话" },
+    { "name": "turns", "description": "轮次与事件流" },
+    { "name": "tools", "description": "工具可达集（= toolAllowlist ∩ 已就绪 connector）" },
+    { "name": "approvals", "description": "审批（载荷不含参数，C9；参数经 SPEC-01 的通道补全）" },
+    { "name": "history", "description": "历史与轨迹（须由域外施加 RBAC，C26）" },
+    { "name": "files", "description": "文件" },
+    { "name": "usage", "description": "用量与对账（T+1）" },
+    { "name": "llm", "description": "模型目录" }
+  ],
+
+  "paths": {
+    "/v1/scenarios": {
+      "get": {
+        "tags": ["catalog"], "operationId": "listScenarios",
+        "summary": "列出可用场景",
+        "x-ov-requirements": ["PRD-059"],
+        "responses": {
+          "200": { "description": "场景列表", "content": { "application/json": { "schema": {
+            "type": "object", "required": ["items"], "properties": {
+              "items": { "type": "array", "items": { "$ref": "#/components/schemas/Scenario" } } } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+
+    "/v1/plugins": {
+      "get": {
+        "tags": ["catalog"], "operationId": "listPlugins",
+        "summary": "列出 Cordis 插件（不含 MCP 与 Skill）",
+        "parameters": [
+          { "name": "kind", "in": "query", "schema": { "type": "string", "enum": ["bundle", "seam-provider", "tool", "ui", "skill-provider"] } },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } }
+        ],
+        "x-ov-requirements": ["ENG-020"],
+        "responses": {
+          "200": { "description": "插件列表", "content": { "application/json": { "schema": {
+            "type": "object", "required": ["items"], "properties": {
+              "items": { "type": "array", "items": { "$ref": "#/components/schemas/PluginDescriptor" } } } } } } }
+        }
+      }
+    },
+
+    "/v1/connectors": {
+      "get": {
+        "tags": ["catalog"], "operationId": "listConnectors",
+        "summary": "列出 MCP 连接器",
+        "x-ov-requirements": ["SEC-050"],
+        "responses": {
+          "200": { "description": "连接器列表", "content": { "application/json": { "schema": {
+            "type": "object", "required": ["items"], "properties": {
+              "items": { "type": "array", "items": { "$ref": "#/components/schemas/ConnectorDescriptor" } } } } } } }
+        }
+      }
+    },
+
+    "/v1/skills": {
+      "get": {
+        "tags": ["catalog"], "operationId": "listSkills",
+        "summary": "列出 Skill 资产",
+        "x-ov-requirements": ["SEC-105", "SEC-106", "ENG-063"],
+        "x-ov-note": "Skill 资产的**作用域隔离**与**注入面处置**见 SEC-105 / SEC-106；**分发与装配**见 ENG-063（Profile 的 skillRoots[] 决定装配，目录 = 域外 Catalog ∩ 域内可见集）。原为无主端点（SPEC-00 U-2，已闭合）。",
+        "responses": { "200": { "description": "Skill 列表", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["items"], "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/SkillDescriptor" } } } } } } } }
+      }
+    },
+
+    "/v1/workspaces": {
+      "get": {
+        "tags": ["workspaces"], "operationId": "listWorkspaces",
+        "summary": "列出工作区",
+        "description": "返回该租户的 workspace 记录。workspace 的真源在域外（D14）——不得依赖内核的 `ctx.workspaceRegistry`。",
+        "parameters": [{ "$ref": "#/components/parameters/Cursor" }, { "$ref": "#/components/parameters/Limit" }],
+        "x-ov-requirements": ["PRD-021"],
+        "responses": {
+          "200": { "description": "工作区分页", "content": { "application/json": { "schema": {
+            "allOf": [{ "$ref": "#/components/schemas/Page" }, { "type": "object", "properties": {
+              "items": { "type": "array", "items": { "$ref": "#/components/schemas/Workspace" } } } }] } } } }
+        }
+      },
+      "post": {
+        "tags": ["workspaces"], "operationId": "createWorkspace",
+        "summary": "创建工作区",
+        "x-ov-requirements": ["PRD-021"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {
+          "type": "object", "required": ["name"], "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "isolationGroupId": { "type": "string", "description": "省略则用租户默认隔离组" } } } } } },
+        "responses": {
+          "201": { "description": "已创建", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workspace" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+
+    "/v1/workspaces/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+      "get": {
+        "tags": ["workspaces"], "operationId": "getWorkspace",
+        "x-ov-requirements": ["PRD-004"],
+        "x-ov-note": "PRD-004 定义 workspace 资源的生命周期语义（移除 vs 删除）；读取是该资源的契约组成部分。",
+        "responses": { "200": { "description": "工作区", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workspace" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "delete": {
+        "tags": ["workspaces"], "operationId": "deleteWorkspace",
+        "summary": "删除工作区（默认真删）",
+        "description": "**危险语义要有危险的名字**（SPEC-04 PRD-029/030）。默认真删 + 二次确认 + **7 天撤销窗口**；生效时延 ≤ 24 h。只移除注册请用 `:unregister`。",
+        "parameters": [{ "name": "confirm", "in": "query", "required": true, "schema": { "const": true } }],
+        "x-ov-requirements": ["PRD-029", "PRD-030", "PRD-031"],
+        "responses": {
+          "202": { "description": "已受理删除（异步，含生效时延与撤销窗口）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeletionTicket" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+
+    "/v1/workspaces/{id}:unregister": {
+      "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+      "post": {
+        "tags": ["workspaces"], "operationId": "unregisterWorkspace",
+        "summary": "移除工作区注册（明确不删数据）",
+        "description": "C32：移除 workspace 记录**不删除**其文件夹、文件或会话历史。",
+        "x-ov-requirements": ["PRD-029"],
+        "responses": { "204": { "description": "已移除注册；数据保留" } }
+      }
+    },
+
+    "/v1/workspaces/{id}/sessions": {
+      "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+      "get": {
+        "tags": ["workspaces"], "operationId": "listWorkspaceSessions",
+        "summary": "列出该工作区的会话",
+        "description": "补文件与历史入口：不得只依赖 `sessionId` 前缀，否则删掉最后一个会话后文件失去入口（SPEC-04 PRD-005）。",
+        "x-ov-requirements": ["PRD-005"],
+        "responses": { "200": { "description": "会话列表", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["items"], "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/Session" } } } } } } } }
+      }
+    },
+
+    "/v1/workspaces/{id}/files": {
+      "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }],
+      "get": {
+        "tags": ["files"], "operationId": "listWorkspaceFiles",
+        "summary": "列出工作区文件（不依赖 sessionId）",
+        "x-ov-requirements": ["PRD-005"],
+        "responses": { "200": { "description": "文件列表", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["items"], "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/FileEntry" } } } } } } } }
+      }
+    },
+
+    "/v1/workspaces/{id}/files/{path}": {
+      "parameters": [{ "$ref": "#/components/parameters/WorkspaceId" }, { "$ref": "#/components/parameters/FilePath" }],
+      "get": {
+        "tags": ["files"], "operationId": "readWorkspaceFile",
+        "x-ov-requirements": ["PRD-061", "PRD-004"],
+        "x-ov-note": "**产品侧唯一文件入口**（PRD-061）。PRD-004 验收判据②直接引用本路径（`:unregister` 后文件仍可取回）。原为无主端点（SPEC-00 U-1，已闭合）。",
+        "responses": { "200": { "description": "文件内容", "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } } }
+      },
+      "put": {
+        "tags": ["files"], "operationId": "writeWorkspaceFile",
+        "x-ov-requirements": ["PRD-061"],
+        "x-ov-note": "写操作须产生硬审计，且受沙箱模式约束（PRD-061 判据③）。原为无主端点（SPEC-00 U-1，已闭合）。",
+        "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } },
+        "responses": { "204": { "description": "已写入" } }
+      },
+      "delete": {
+        "tags": ["files"], "operationId": "deleteWorkspaceFile",
+        "x-ov-requirements": ["PRD-061"],
+        "x-ov-note": "同上。原为无主端点（SPEC-00 U-1，已闭合）。",
+        "responses": { "204": { "description": "已删除" } }
+      }
+    },
+
+    "/v1/sessions": {
+      "post": {
+        "tags": ["sessions"], "operationId": "createSession",
+        "summary": "创建会话（须指定已授权的工作区）",
+        "description": "会话的 `cwd` 由 workspaceId 一对一投影，**创建后不可变**（C27）⇒ 一个会话绑定一个工作区，中途不能换。",
+        "x-ov-requirements": ["PRD-001", "PRD-002"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {
+          "type": "object", "required": ["workspaceId"], "properties": {
+            "workspaceId": { "type": "string" },
+            "presetId": { "type": "string", "description": "省略则用租户默认场景的 preset" },
+            "title": { "type": "string" } } } } } },
+        "responses": {
+          "201": { "description": "已创建", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+
+    "/v1/sessions/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "get": {
+        "tags": ["sessions"], "operationId": "getSession",
+        "x-ov-requirements": ["PRD-001"],
+        "x-ov-note": "PRD-001 验收判据①直接引用本端点（返回的 workspaceId 在任何后续调用后不变）。",
+        "responses": { "200": { "description": "会话", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Session" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" } }
+      },
+      "delete": {
+        "tags": ["sessions"], "operationId": "deleteSession",
+        "summary": "删除会话历史（不动工作区数据）",
+        "description": "三个语义正交：删会话 ≠ 删工作区数据 ≠ 删历史入口。删会话后工作区文件仍在原处可访问（`/v1/workspaces/{id}/files`）。",
+        "x-ov-requirements": ["PRD-005"],
+        "responses": { "204": { "description": "已删除" } }
+      }
+    },
+
+    "/v1/sessions/{id}/turns": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "post": {
+        "tags": ["turns"], "operationId": "createTurn",
+        "summary": "发起一个轮次",
+        "description": "同会话任一时刻至多一个开放轮次——并发请求返回 409，前端须表达为排队或「取消并发送」，不得把错误码直接抛给用户（SPEC-04 PRD-060）。",
+        "x-ov-requirements": ["PRD-060"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {
+          "type": "object", "required": ["input"], "properties": {
+            "input": { "type": "string" },
+            "idempotencyKey": { "type": "string", "description": "同键重复请求返回同一 turnId" } } } } } },
+        "responses": {
+          "202": { "description": "已受理", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Turn" } } } },
+          "409": { "description": "该会话已有开放轮次", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+
+    "/v1/sessions/{id}/events": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "get": {
+        "tags": ["turns"], "operationId": "streamEvents",
+        "summary": "事件流（SSE）",
+        "description": "单一 SSE 通道。支持 `Last-Event-ID` 从 `seq+1` 续传；超出保留窗口返回 `resync`，且**必须携带「已丢失区间 + 期间结论」**；心跳 ≤ 15 s（SPEC-02）。",
+        "parameters": [
+          { "name": "Last-Event-ID", "in": "header", "schema": { "type": "integer" }, "description": "从该 seq 之后续传" }
+        ],
+        "x-ov-requirements": ["REL-100"],
+        "responses": {
+          "200": { "description": "事件流", "content": { "text/event-stream": { "schema": { "$ref": "#/components/schemas/Event" } } } },
+          "410": { "description": "已超出保留窗口，须 resync" }
+        }
+      }
+    },
+
+    "/v1/sessions/{id}/turns/{tid}/cancel": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }, { "$ref": "#/components/parameters/TurnId" }],
+      "post": {
+        "tags": ["turns"], "operationId": "cancelTurn",
+        "summary": "取消轮次",
+        "description": "轮次总预算 `T_turn` 到期时由平台发起（REL-102）。",
+        "x-ov-requirements": ["REL-102"],
+        "responses": { "202": { "description": "已请求取消" } }
+      }
+    },
+
+    "/v1/sessions/{id}/turns/{tid}/calls/{callId}": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }, { "$ref": "#/components/parameters/TurnId" },
+        { "name": "callId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "tags": ["tools"], "operationId": "getToolCall",
+        "summary": "按 callId 回补工具调用（参数摘要）",
+        "description": "审批请求载荷**不含参数**（C9）。参数经桥的审批前上报通道送达域外，本端点供 SSE 重连后的审批框回补（SPEC-01 SEC-058–062）。",
+        "x-ov-requirements": ["SEC-058", "SEC-059", "ENG-012"],
+        "responses": {
+          "200": { "description": "调用详情（脱敏后）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ToolCallDetail" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+
+    "/v1/sessions/{id}/tools": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "get": {
+        "tags": ["tools"], "operationId": "listSessionTools",
+        "summary": "该会话实际可达的工具",
+        "description": "= `toolAllowlist` ∩ 已就绪 connector。connector 生命周期变化导致工具集缩小时，须能看到具体工具名与 connector 名，**不得静默缩小**（SPEC-04 PRD-009）。",
+        "x-ov-requirements": ["PRD-009"],
+        "responses": { "200": { "description": "工具列表", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["items"], "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/ToolDescriptor" } } } } } } } }
+      }
+    },
+
+    "/v1/sessions/{id}/approvals/{aid}": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" },
+        { "name": "aid", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "tags": ["approvals"], "operationId": "decideApproval",
+        "summary": "提交审批决策",
+        "description": "仅一次性授权——**不得**实现 allow-always 或规则存储（C8 / SPEC-03 ENG-010）。批准前必须先看到脱敏参数预览；参数缺失时**禁止批准**（SPEC-04 PRD-013）。",
+        "x-ov-requirements": ["PRD-014", "PRD-015", "ENG-010"],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalDecision" } } } },
+        "responses": {
+          "200": { "description": "已决策", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalRequest" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+
+    "/v1/approvals": {
+      "get": {
+        "tags": ["approvals"], "operationId": "listApprovals",
+        "summary": "用户维度审批收件箱",
+        "description": "审批按**用户维度**聚合，不按会话（SPEC-04 PRD-016）。超时 `T_a` 到期收敛为 `timeout` 并 fail-closed。",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["pending", "decided", "expired"] } },
+          { "$ref": "#/components/parameters/Cursor" }, { "$ref": "#/components/parameters/Limit" }
+        ],
+        "x-ov-requirements": ["PRD-016", "REL-103"],
+        "responses": { "200": { "description": "审批分页", "content": { "application/json": { "schema": {
+          "allOf": [{ "$ref": "#/components/schemas/Page" }, { "type": "object", "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/ApprovalRequest" } } } }] } } } } }
+      }
+    },
+
+    "/v1/sessions/{id}/messages": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "get": {
+        "tags": ["history"], "operationId": "listMessages",
+        "summary": "会话消息（折叠后的模型历史）",
+        "description": "**域外必须施加调用方授权**——`ctx.sessionQuery` 无调用方授权（C26）。",
+        "parameters": [{ "$ref": "#/components/parameters/Cursor" }, { "$ref": "#/components/parameters/Limit" }],
+        "x-ov-requirements": ["SEC-077"],
+        "responses": { "200": { "description": "消息分页", "content": { "application/json": { "schema": {
+          "allOf": [{ "$ref": "#/components/schemas/Page" }, { "type": "object", "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } } } }] } } } } }
+      }
+    },
+
+    "/v1/sessions/{id}/trajectory": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "get": {
+        "tags": ["history"], "operationId": "getTrajectory",
+        "summary": "轨迹（含中断轮次与结果未知标记）",
+        "description": "中断轮次**永久保留在历史中**（C22）——恢复是追加合成 closer，不是回滚。`TOOL_OUTCOME_UNKNOWN` / `TOOL_NOT_STARTED` 为一等事件。",
+        "parameters": [{ "$ref": "#/components/parameters/Cursor" }, { "$ref": "#/components/parameters/Limit" }],
+        "x-ov-requirements": ["REL-076"],
+        "responses": { "200": { "description": "轨迹分页", "content": { "application/json": { "schema": {
+          "allOf": [{ "$ref": "#/components/schemas/Page" }, { "type": "object", "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/TrajectoryStep" } } } }] } } } } }
+      }
+    },
+
+    "/v1/sessions/{id}/files": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "get": {
+        "tags": ["files"], "operationId": "listSessionFiles",
+        "x-ov-requirements": ["PRD-061"],
+        "x-ov-note": "**兼容保留**：产品侧文件入口应为 workspace 级（`listWorkspaceFiles`，PRD-061）。原为无主端点（SPEC-00 U-1，已闭合）。",
+        "responses": { "200": { "description": "文件列表", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["items"], "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/FileEntry" } } } } } } } }
+      }
+    },
+
+    "/v1/sessions/{id}/files/{path}": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }, { "$ref": "#/components/parameters/FilePath" }],
+      "get": { "tags": ["files"], "operationId": "readSessionFile",
+        "x-ov-requirements": ["PRD-061"],
+        "x-ov-note": "**兼容保留**：产品侧唯一文件入口是 workspace 级（PRD-061）。设计 §6.1 原把文件操作挂在 sessionId 前缀下，但 PRD-005 指出该做法会使文件在删除最后一个会话后失去入口。原为无主端点（SPEC-00 U-1，已闭合）。",
+        "responses": { "200": { "description": "文件内容", "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } } } },
+      "put": { "tags": ["files"], "operationId": "writeSessionFile",
+        "x-ov-requirements": ["PRD-061"],
+        "x-ov-note": "**兼容保留**：同 readSessionFile（SPEC-00 U-1，已闭合）。",
+        "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } } },
+        "responses": { "204": { "description": "已写入" } } },
+      "delete": { "tags": ["files"], "operationId": "deleteSessionFile",
+        "x-ov-requirements": ["PRD-061"],
+        "x-ov-note": "**兼容保留**：同 readSessionFile（SPEC-00 U-1，已闭合）。",
+        "responses": { "204": { "description": "已删除" } } }
+    },
+
+    "/v1/sessions/{id}/uploads": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionId" }],
+      "post": {
+        "tags": ["files"], "operationId": "createUpload",
+        "summary": "签发上传凭证",
+        "x-ov-requirements": [],
+        "responses": { "201": { "description": "上传目标", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["url", "expiresAt", "uploadId"], "properties": {
+            "url": { "type": "string", "format": "uri" },
+            "uploadId": { "type": "string" },
+            "expiresAt": { "type": "string", "format": "date-time" } } } } } } }
+      }
+    },
+
+    "/v1/usage": {
+      "get": {
+        "tags": ["usage"], "operationId": "getUsage",
+        "summary": "用量（T+1）",
+        "description": "真源 = 会话日志 + 上传确认水位。幂等键 `(tenantId, turnId)`；对账窗口 T+24 h；**少计与多计分列**（SPEC-04 PRD-041）。",
+        "parameters": [
+          { "name": "dim", "in": "query", "required": true, "schema": { "type": "string", "enum": ["workspace", "user", "scenario", "connector"] } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "x-ov-requirements": ["PRD-036", "PRD-041"],
+        "responses": { "200": { "description": "用量记录", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["items", "reconciliation"], "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/UsageRecord" } },
+            "reconciliation": { "$ref": "#/components/schemas/Reconciliation" } } } } } } }
+      }
+    },
+
+    "/v1/usage/export": {
+      "get": {
+        "tags": ["usage"], "operationId": "exportUsage",
+        "summary": "导出自助用量（含 reconciled 标记）",
+        "x-ov-requirements": ["PRD-036", "PRD-042"],
+        "responses": { "200": { "description": "CSV 导出", "content": { "text/csv": { "schema": { "type": "string" } } } } }
+      }
+    },
+
+    "/v1/llm/providers": {
+      "get": {
+        "tags": ["llm"], "operationId": "listProviders",
+        "summary": "模型目录",
+        "description": "依赖 `LlmAdapter` 的 `listModels` / `resolveModel`——二者虽有默认实现但**必须**实现，否则本端点失效（SPEC-03 ENG-005）。",
+        "x-ov-requirements": ["ENG-005"],
+        "responses": { "200": { "description": "provider 列表", "content": { "application/json": { "schema": {
+          "type": "object", "required": ["items"], "properties": {
+            "items": { "type": "array", "items": { "$ref": "#/components/schemas/ProviderDescriptor" } } } } } } } }
+      }
+    }
+  },
+
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http", "scheme": "bearer", "bearerFormat": "JWT",
+        "description": "JWT（OIDC，对接企业 IdP）。绑定 tenantId 与允许的 workspaceId 集合（SPEC-00，§5.1）。"
+      }
+    },
+
+    "parameters": {
+      "Cursor": { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } },
+      "SessionId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "WorkspaceId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "TurnId": { "name": "tid", "in": "path", "required": true, "schema": { "type": "string" } },
+      "FilePath": {
+        "name": "path", "in": "path", "required": true,
+        "schema": { "type": "string" },
+        "description": "通配路径段。用 `{path}` 而非查询参数，避免 `%2F` 被网关规范化。"
+      }
+    },
+
+    "responses": {
+      "Unauthorized": { "description": "未认证", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "无权限（含 workspace 不在令牌允许集合内）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "不存在", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Conflict": { "description": "冲突（如已有开放轮次、并发删除）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unavailable": {
+        "description": "治理组件不可用。**硬依赖 fail-closed**：拒绝执行而非放行。降级级别见 `domain.degraded` 事件。",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+
+    "schemas": {
+      "Error": {
+        "type": "object", "required": ["code", "message", "requestId"],
+        "properties": {
+          "code": { "type": "string", "examples": ["TURN_ALREADY_OPEN", "WORKSPACE_NOT_AUTHORIZED", "DEPENDENCY_HARD_UNAVAILABLE"] },
+          "message": { "type": "string" },
+          "requestId": { "type": "string" },
+          "degradationLevel": { "type": "string", "enum": ["L0", "L1", "L1b", "L2", "L3"], "description": "当前降级级别（SPEC-02）" }
+        }
+      },
+
+      "Page": {
+        "type": "object", "required": ["hasMore"], "properties": {
+          "nextCursor": { "type": "string" }, "hasMore": { "type": "boolean" } }
+      },
+
+      "Scenario": {
+        "type": "object", "required": ["scenarioId", "name", "presetId"],
+        "properties": {
+          "scenarioId": { "type": "string" }, "name": { "type": "string" },
+          "presetId": { "type": "string" }, "description": { "type": "string" } }
+      },
+
+      "PluginDescriptor": {
+        "type": "object", "required": ["name", "version", "kind", "tier"],
+        "properties": {
+          "name": { "type": "string" }, "version": { "type": "string" },
+          "kind": { "type": "string", "enum": ["bundle", "seam-provider", "tool", "ui", "skill-provider"] },
+          "tier": { "type": "string", "enum": ["platform", "scenario", "tenant"] } }
+      },
+
+      "ConnectorDescriptor": {
+        "type": "object", "required": ["serverName", "transport", "hosting", "trust"],
+        "properties": {
+          "serverName": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,32}$" },
+          "transport": { "type": "string", "enum": ["stdio", "streamable-http"] },
+          "hosting": { "type": "string", "enum": ["domain", "data-plane", "exception"],
+            "description": "凭证归属。D11：默认任何凭证不得进入域内。" },
+          "trust": { "type": "string", "enum": ["trusted", "untrusted"], "description": "默认 untrusted" },
+          "required": { "type": "boolean" },
+          "toolCount": { "type": "integer", "description": "工具数突变必须告警（SPEC-01 SEC-050）" },
+          "connected": { "type": "boolean" } }
+      },
+
+      "SkillDescriptor": {
+        "type": "object", "required": ["skillId", "name", "scope"],
+        "properties": {
+          "skillId": { "type": "string" }, "name": { "type": "string" },
+          "scope": { "type": "string", "enum": ["platform", "tenant", "user"] } }
+      },
+
+      "Workspace": {
+        "type": "object", "required": ["workspaceId", "tenantId", "name", "writable", "createdAt"],
+        "properties": {
+          "workspaceId": { "type": "string" }, "tenantId": { "type": "string" },
+          "isolationGroupId": { "type": "string" },
+          "name": { "type": "string" },
+          "writable": { "type": "boolean", "description": "false = 租户级只读共享工作区" },
+          "sessionCount": { "type": "integer" },
+          "createdAt": { "type": "string", "format": "date-time" } }
+      },
+
+      "Session": {
+        "type": "object", "required": ["sessionId", "workspaceId", "presetId", "status", "createdAt"],
+        "properties": {
+          "sessionId": { "type": "string" }, "workspaceId": { "type": "string" },
+          "presetId": { "type": "string", "description": "会话创建后不可变（SPEC-01 SEC-028）" },
+          "status": { "type": "string", "enum": ["creating", "active", "idle", "archived", "destroyed"] },
+          "sandboxMode": { "type": "string", "enum": ["read-only", "workspace-write", "danger-full-access"],
+            "description": "会话页须常驻模式徽章（SPEC-04 PRD-018）" },
+          "openTurnId": { "type": "string", "description": "至多一个开放轮次" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" } }
+      },
+
+      "Turn": {
+        "type": "object", "required": ["turnId", "sessionId", "status"],
+        "properties": {
+          "turnId": { "type": "string" }, "sessionId": { "type": "string" },
+          "status": { "type": "string", "enum": ["created", "running", "completed", "failed", "interrupted", "cancelled"] },
+          "reason": { "type": "string" },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "endedAt": { "type": "string", "format": "date-time" } }
+      },
+
+      "Event": {
+        "type": "object", "required": ["seq", "type", "at"],
+        "properties": {
+          "seq": { "type": "integer", "description": "单调；作为 SSE id" },
+          "type": { "type": "string", "enum": [
+            "turn.started", "message.delta", "reasoning.delta", "tool.call", "tool.result",
+            "tool.outcome_unknown", "step.end", "checkpoint", "connector.state",
+            "approval.requested", "approval.decided", "sandbox.mode", "usage",
+            "turn.completed", "turn.failed", "turn.interrupted", "turn.cancelled",
+            "domain.degraded", "recovery.lost_state", "resync" ] },
+          "turnId": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "data": { "type": "object", "additionalProperties": true } }
+      },
+
+      "ToolDescriptor": {
+        "type": "object", "required": ["name", "source", "requiresApproval"],
+        "properties": {
+          "name": { "type": "string", "description": "MCP 工具为 mcp__<serverName>__<rawName>，是 (serverName, rawName) 的纯函数" },
+          "description": { "type": "string" },
+          "source": { "type": "string", "enum": ["native", "mcp"] },
+          "serverName": { "type": "string" },
+          "requiresApproval": { "type": "boolean" },
+          "available": { "type": "boolean", "description": "false = connector 生命周期变化导致暂时不可用" } }
+      },
+
+      "ToolCallDetail": {
+        "type": "object", "required": ["callId", "toolName", "redacted"],
+        "properties": {
+          "callId": { "type": "string" }, "toolName": { "type": "string" },
+          "argsDigest": { "type": "string", "description": "参数摘要（用于关联与完整性）" },
+          "argsPreview": { "type": "string", "description": "脱敏后的参数预览，体积上限 8 KiB" },
+          "redacted": { "type": "boolean", "description": "是否发生过键级脱敏" },
+          "truncated": { "type": "boolean" },
+          "contextMissing": { "type": "boolean", "description": "true 时审批面板必须禁止批准（SPEC-04 PRD-013）" } }
+      },
+
+      "ApprovalRequest": {
+        "type": "object", "required": ["approvalId", "callId", "sessionId", "turnId", "toolName", "status", "expiresAt"],
+        "properties": {
+          "approvalId": { "type": "string" }, "callId": { "type": "string" },
+          "sessionId": { "type": "string" }, "turnId": { "type": "string" },
+          "toolName": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "allowed-once", "rejected", "cancelled", "unavailable", "timeout"] },
+          "expiresAt": { "type": "string", "format": "date-time", "description": "T_a 到期时刻" },
+          "arguments": { "$ref": "#/components/schemas/ToolCallDetail" } }
+      },
+
+      "ApprovalDecision": {
+        "type": "object", "required": ["decision"],
+        "properties": { "decision": { "type": "string", "enum": ["allow-once", "deny"] } },
+        "description": "仅这两个取值。**没有** allow-always——内核无规则存储（C8），自研等于发明内核不承认的授权语义。"
+      },
+
+      "Message": {
+        "type": "object", "required": ["messageId", "role", "at"],
+        "properties": {
+          "messageId": { "type": "string" },
+          "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+          "content": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" } }
+      },
+
+      "TrajectoryStep": {
+        "type": "object", "required": ["stepId", "kind"],
+        "properties": {
+          "stepId": { "type": "string" },
+          "kind": { "type": "string", "enum": ["model", "tool", "approval", "checkpoint"] },
+          "toolName": { "type": "string" },
+          "turnId": { "type": "string" },
+          "outcomeUnknown": { "type": "boolean", "description": "TOOL_OUTCOME_UNKNOWN / TOOL_NOT_STARTED" },
+          "interrupted": { "type": "boolean" } }
+      },
+
+      "FileEntry": {
+        "type": "object", "required": ["path", "kind"],
+        "properties": {
+          "path": { "type": "string" },
+          "kind": { "type": "string", "enum": ["file", "directory"] },
+          "size": { "type": "integer" },
+          "modifiedAt": { "type": "string", "format": "date-time" } }
+      },
+
+      "UsageRecord": {
+        "type": "object", "required": ["dim", "key", "reconciled"],
+        "properties": {
+          "dim": { "type": "string", "enum": ["workspace", "user", "scenario", "connector"] },
+          "key": { "type": "string" },
+          "tokensIn": { "type": "integer" }, "tokensOut": { "type": "integer" },
+          "cachedTokens": { "type": "integer" },
+          "cost": { "type": "number" },
+          "reconciled": { "type": "boolean", "description": "false = 该区间发生过有界丢弃，按墓碑标记" } }
+      },
+
+      "Reconciliation": {
+        "type": "object", "required": ["windowEnd", "diffUnder", "diffOver"],
+        "properties": {
+          "windowEnd": { "type": "string", "format": "date-time", "description": "对账窗口（T+24 h）" },
+          "diffUnder": { "type": "number", "description": "少计（收入漏损）——与多计方向相反，分列" },
+          "diffOver": { "type": "number", "description": "多计（客户争议）" },
+          "convergeBy": { "type": "string", "format": "date-time" },
+          "note": { "type": "string", "description": "必填边界声明：对账只能发现『不一致』，不能发现『伪造』" } }
+      },
+
+      "ProviderDescriptor": {
+        "type": "object", "required": ["provider", "models"],
+        "properties": {
+          "provider": { "type": "string" },
+          "models": { "type": "array", "items": {
+            "type": "object", "required": ["model"], "properties": {
+              "model": { "type": "string" },
+              "contextWindow": { "type": "integer" },
+              "supportsImages": { "type": "boolean" } } } } }
+      },
+
+      "DeletionTicket": {
+        "type": "object", "required": ["ticketId", "state", "effectiveBy", "undoUntil"],
+        "properties": {
+          "ticketId": { "type": "string" },
+          "state": { "type": "string", "enum": ["accepted", "tombstoned", "purging", "purged", "undone"] },
+          "effectiveBy": { "type": "string", "format": "date-time", "description": "生效时延 ≤ 24 h" },
+          "undoUntil": { "type": "string", "format": "date-time", "description": "撤销窗口 7 天" },
+          "reportReady": { "type": "boolean", "description": "删除报告（哈希链证明）是否可下载" } }
+      }
+    }
+  },
+
+  "x-ov-conventions": {
+    "routing-key": "所有写操作按 (tenantId, isolationGroupId) 路由；workspaceId 须在令牌允许集合内校验",
+    "idempotency": "写操作接受幂等键；同键重复请求返回同一资源标识",
+    "fail-closed": "治理组件不可用时拒绝执行而非放行；硬依赖不可用返回 503 并携带当前降级级别",
+    "no-direct-llm": "**不提供**模型直连端点——所有模型调用必须经反向网关（D9）",
+    "authz-history": "历史类端点须由域外施加调用方授权（C26：ctx.sessionQuery 无调用方授权）",
+    "not-in-scope": [
+      "OpenAPI 不描述内部反向 I/O（/internal/kernel/*）——那是域内↔域外通道，不是对外 API",
+      "不描述 SSE 的分帧细节——见 SPEC-02 的事件流条款"
+    ]
+  }
+}

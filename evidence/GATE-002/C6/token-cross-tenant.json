@@ -1,0 +1,5 @@
+{
+  "crossTenantRejected": true,
+  "reason": "请求租户 tenant-b != 令牌租户 tenant-a：拒绝（§4.2.1 域令牌绑定）",
+  "hardAudit": "token.cross_tenant_rejected 已入账（SEC-008）"
+}

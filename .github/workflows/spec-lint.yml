@@ -1,0 +1,109 @@
+name: spec-lint
+
+# 规格集与契约的一致性校验
+#   1. spec/**    —— GATE-007 / GATE-008 / GATE-010
+#   2. 门禁引用完整性
+#   3. contracts/** —— $ref 可解析 / OpenAPI 结构 / 需求归属
+#   4. docs/**    —— 交付物文档的需求引用可解析
+#
+# 触发范围限于受校验的目录与校验器自身，避免无关改动影响流水线。
+
+on:
+  push:
+    paths:
+      - "spec/**"
+      - "contracts/**"
+      - "docs/**"
+      - "tools/**"
+      - ".github/workflows/spec-lint.yml"
+  pull_request:
+    paths:
+      - "spec/**"
+      - "contracts/**"
+      - "docs/**"
+      - "tools/**"
+      - ".github/workflows/spec-lint.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spec-lint:
+    name: 规格集校验（GATE-007 / GATE-008 / GATE-010）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 运行规格集校验器
+        run: node tools/lint-specs.mjs
+
+      - name: 失败时输出 JSON 明细
+        if: failure()
+        run: node tools/lint-specs.mjs --json > spec-lint-report.json || true
+
+      - name: 上传报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec-lint-report
+          path: spec-lint-report.json
+          if-no-files-found: ignore
+
+  gate-manifest:
+    name: 门禁引用完整性
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # SPEC-00 §7 定义了 GATE-001…006 六个阶段门禁。
+      # 断言：每个门禁都至少被一条需求引用（孤立的门禁不构成开发约束）。
+      - name: 断言每个门禁都被引用
+        run: node tools/check-gates.mjs
+
+  contract-lint:
+    name: 契约校验（REF / SCHEMA / OAS / REQ）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # checks contracts/profile.schema.json 与 contracts/openapi.json：
+      # $ref 可解析、required ⊆ properties、operationId 唯一、tag 已声明、
+      # 每个操作声明 x-ov-requirements 且其 ID 能在 spec/ 中解析。
+      - name: 运行契约校验器
+        run: node tools/validate-contracts.mjs
+
+  docs-lint:
+    name: 交付物文档校验（ID / HEADER / NORM / PHANTOM）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # docs/** 中引用的每个需求 ID 必须能在 spec/ 中解析到定义。
+      # 这是「交付物文档没有空头承诺」的机器保证。
+      - name: 运行交付物文档校验器
+        run: node tools/lint-docs.mjs
+
+      - name: 失败时输出 JSON 明细
+        if: failure()
+        run: node tools/lint-docs.mjs --json > docs-lint-report.json || true
+
+      - name: 上传报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-lint-report
+          path: docs-lint-report.json
+          if-no-files-found: ignore

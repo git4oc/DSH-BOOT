@@ -1,0 +1,39 @@
+{
+  "profileId": "dev-seed",
+  "protocolVersion": "1.0",
+  "trainVersion": "0.2.0-rc.2",
+  "tenantId": "dev-tenant",
+  "isolationGroupId": "dev-isolation",
+  "residencyRegion": "local",
+  "workspaces": [
+    { "workspaceId": "dev-ws", "root": "/workspace", "writable": true }
+  ],
+  "presetId": "dev-preset",
+  "pluginSet": [
+    {
+      "name": "dsh-base",
+      "version": "0.2.0-rc.2",
+      "integrity": "sha512-dev-seed-placeholder",
+      "tier": "platform"
+    }
+  ],
+  "removedRows": ["tool-plugin-manager", "plugin-manager"],
+  "hmr": { "enabled": false },
+  "toolAllowlist": ["*"],
+  "skillRoots": [],
+  "sandboxMode": "read-only",
+  "sandboxModeCeiling": "workspace-write",
+  "permissionPresets": { "reachable": ["dev-preset"] },
+  "connectors": [],
+  "deadlines": {
+    "approvalSeconds": 60,
+    "modelStreamSeconds": 120,
+    "turnSeconds": 900
+  },
+  "buffers": { "audit": { "retainHours": 24 }, "billing": { "retainHours": 24 } },
+  "modelDegradation": { "main": { "target": "fail-closed" } },
+  "sessionProjectionCache": { "writeEveryEvents": 100, "writeIntervalMs": 1000 },
+  "quota": { "tokensPerDay": 100000, "toolCallsPerTurn": 10 },
+  "gateway": { "endpoint": "http://127.0.0.1:7301", "tokenTtlSeconds": 300 },
+  "requiredPlugins": ["dsh-invariants"]
+}

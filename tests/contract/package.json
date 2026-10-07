@@ -1,0 +1,14 @@
+{
+  "name": "@dsh-boot/tests-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "契约测试套件（ENG-020）。",
+  "type": "module",
+  "dependencies": {
+    "@dsh-boot/protocol": "workspace:*",
+    "@dsh-boot/domain-bridge": "workspace:*",
+    "@dsh-boot/reverse-gateway": "workspace:*",
+    "@dsh-boot/control-plane": "workspace:*",
+    "@dsh-boot/tools-snapshot": "workspace:*"
+  }
+}

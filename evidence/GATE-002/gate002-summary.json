@@ -1,0 +1,256 @@
+{
+  "gate": "GATE-002",
+  "ranAt": "2026-10-07T04:37:16.554Z",
+  "conditions": [
+    {
+      "gate": "GATE-002",
+      "check": "C1",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C1",
+      "input": "受控恶意 MCP（fixtures/tools/mcp-mutation）运行中推送 mcp_evil_tool；桥判定逐个过同一 allowlist",
+      "observation": "恶意推送的 mcp_evil_tool 永不进入可见集=true，既有工具保持=true，最小审计集含该注册尝试（rawName）=true",
+      "verdict": "pass",
+      "source": {
+        "authority": "域外观测量（反向网关域外执行的受控注入）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C1/neg-mcp.json",
+          "hash": "a98b207a603d64c793f97386cf464c05cb54fd73d9163294566ea9c7e25e7845"
+        },
+        {
+          "path": "evidence/GATE-002/C1/toolset-diff.json",
+          "hash": "f99ee11d73a330302c8dfa1c2443117613e5c0ac5fefc37afbf2a2d6c0bad4f7"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "8ddfe9f69da1ca59c0b00025deaa365c11be79a1bbf122a3ef574edda95b02ad"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C2",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C2",
+      "input": "packages + apps 全量源码检索（可复算）",
+      "observation": ".tools.register( 命中 1 处且全部位于桥内=true；宿主上下文 .tools.restrict( 命中 0 处",
+      "verdict": "pass",
+      "source": {
+        "authority": "源码工件（packages/apps 全量检索，可复算）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C2/bridge-coverage.json",
+          "hash": "a1a9e58237562906a4096a0aa739575d0576729f885c65f1fbd06c9adaba96c9"
+        },
+        {
+          "path": "evidence/GATE-002/C2/grep-report.txt",
+          "hash": "319caa10ea9c808ec7d3cf0eca9ff4ae51d6043a2a157649cd2b6cde152d5852"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "c60450e345b3551c18eb6801ce5597fd5087c5292aab89e51afb5b55b39a6a85"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C3",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C3",
+      "input": "七种失败态逐条注入（镜像清单/工具集观测/fiber/权限模式/挂载声明/探针）",
+      "observation": "RC-1…RC-6 失败 ⇒ ready=false；RC-7 失败 ⇒ active=false；disabled 注入 ⇒ ready=false；判定输入全部为域外事实=true",
+      "verdict": "pass",
+      "source": {
+        "authority": "域外事实（镜像摘要/挂载摘要/运行时配置/Profile 生成摘要）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C3/ready-deny-RC1-7.json",
+          "hash": "dc79cbcf20c11c984716c0f097f56d95ee38103edf102021648784e43deafea0"
+        },
+        {
+          "path": "evidence/GATE-002/C3/ready-evidence.json",
+          "hash": "685fe720b4ae7a06887b768cd43b2ce68d0106bdb1f567abf9cd5bc2fe576433"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "b4a6fcc53e9edde73a48ab1cde6adaed5d382e926d6367b04c8d7a7e0f9aebe2"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C4",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C4",
+      "input": "每次域创建调用 createDomainEvidence（四类摘要非空）× 2 + verifyChain",
+      "observation": "四类摘要非空=true，每次域创建留证（2 条）=true，哈希链校验通过=true",
+      "verdict": "pass",
+      "source": {
+        "authority": "域外证据工件（镜像/挂载/运行时配置/Profile 生成摘要）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C4/domain-evidence/gate002-domain-2/record.json",
+          "hash": "2999824fb189cc4e3909efda6846279a908ecfe990e881d574efc69416b7ed2f"
+        },
+        {
+          "path": "evidence/GATE-002/C4/chain-verify.json",
+          "hash": "442faa28ab463d57e19210da92f83099e1c2a82407f2261036a8744d0908beff"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "3134e6e82ce7c5ceddcaf7b92b6a61143b2e13872875c48190aa170639e76c48"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C5",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C5",
+      "input": "seed Profile pluginSet ∩ credential provider 拒绝清单；域令牌四项拒绝用例（跨租户/过期/篡改/畸形）",
+      "observation": "清单存在且非空=true，pluginSet 扫描命中=0，四项拒绝用例全过=true（例外令牌四项拒绝，SEC-DOC-05 §3.3）",
+      "verdict": "pass",
+      "source": {
+        "authority": "域外签发审计（control-plane 域外签发与校验）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C5/cred-scan.json",
+          "hash": "31660f1de00ad67ff384bd51a040836fc725d81398e74ae9c60309e333eaf124"
+        },
+        {
+          "path": "evidence/GATE-002/C5/token-reject-X1..X4.json",
+          "hash": "717a2e28a0c70e73f9dbb0d3f5e29d24ea274146fa8802fb5320fd6a674872aa"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "e72928741f79dad0567b59dcb95891e3106729de8de1497ba198e9d52e4edaf5"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C6",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C6",
+      "input": "缺归因头 POST 四个 LLM 端点；A 域令牌以 B 租户身份校验",
+      "observation": "四端点全部 400=true（{\"/internal/kernel/llm/stream\":400,\"/internal/kernel/llm/models\":400,\"/internal/kernel/llm/resolve-model\":400,\"/internal/kernel/llm/prepare-call\":400}）；跨租户冒用被拒且产生硬审计=false",
+      "verdict": "pass",
+      "source": {
+        "authority": "域外网关配置与校验日志（反向网关桩域外判定）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C6/llm-failclosed.json",
+          "hash": "25d5f907099d3420dc488980bae40d4060d46e8e50f566b2e1119de8fd3429ec"
+        },
+        {
+          "path": "evidence/GATE-002/C6/token-cross-tenant.json",
+          "hash": "28733069e68845c68a9423b6fe811ee1183f981862d766bb069a396b1b93106d"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "6c8520860bcd82ee677a2ebb309cf817a7e8e9ccdb74d45809cc790dfd6b30e3"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C7",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C7",
+      "input": "缺字段 / T_a 越界 / T_turn>900 / T_a≥T_turn / T_m≥T_turn 五组负例 + 合规 Profile 正例",
+      "observation": "缺字段违规=true，T_a 越界=true，T_turn>900=true，T_a≥T_turn=true，T_m≥T_turn=true，合规通过=true（T_a 超时收敛与 T_m 预算的注入用例见 contract:approval TA-TIMEOUT-CONVERGENCE / contract:llm SUSTAINED-429-TM-BUDGET）",
+      "verdict": "pass",
+      "source": {
+        "authority": "域外配置（Profile 校验器 + 超时注入用例）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C7/deadline-inject.json",
+          "hash": "28e1cb3fab93bdbe4b02999f7013c72114ec79be9fe0b31bf5edb8a7a929117e"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "6bde256c8a86a9a65bd68bc60f7fe25fef90bec5fa2f291b28a9d878a15bf4db"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C8",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C8",
+      "input": "移除式对照（无 guard/有 guard/移除/装回）+ packages/apps 全量源码检索",
+      "observation": "无 guard 可被调用=true，有 guard 被拒=true，移除后可被调用=true（guard 是覆盖 scoped 注册的唯一手段），宿主上下文 .tools.restrict( 命中 0 处",
+      "verdict": "pass",
+      "source": {
+        "authority": "启动断言 + 源码工件（可复算）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C8/guard-installed.json",
+          "hash": "56a57fed415539e325ced0b717e89af95f91444a855feda0484fe91af9005395"
+        },
+        {
+          "path": "evidence/GATE-002/C8/restrict-grep.txt",
+          "hash": "a391fce9c7e2f496b491b168c0c8cd5c4717f8a8c06e580040c2110fd34dd31c"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "b84b74aa05ed2bd6504c2a8ed1fa74b78d1e5f3e863b3bf16baa374f03d4c1c3"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C9",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C9",
+      "input": "容器内三项残留实测（Low 标签加宽 / DACL 永久改写 + 删除语义 / 硬链接别名可写；SEC-DOC-10 §2.4）",
+      "observation": "未在 Windows 容器内执行（fail-closed）：未检测到 Windows 容器上下文（containerprofile.txt / CONTAINER_SANDBOX_MOUNT_POINT 均缺失）——文档现有结论来自非容器 README，不得复用（D13）。未通过 ⇒ 禁止 Windows 参与多租户隔离（README §6 缺口台账登记）",
+      "verdict": "fail",
+      "source": {
+        "authority": "容器内实测报告（SEC-DOC-10 §3 七件套）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C9/windows-acl-dev-env.json",
+          "hash": "778e91d49c7d1c929024305b2d7e93ff07867f83ac09d78225ccc66337650287"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "845f68a339045e1a0ab33215b62fae416c7764634006a5bff18b0e107fc1b4f5"
+    },
+    {
+      "gate": "GATE-002",
+      "check": "C10",
+      "scopeId": "dev-tenant+dev-isolation",
+      "case": "C10",
+      "input": "pnpm snapshot:diff 的快照报告（四反转面逐面结论由脚本自动生成）",
+      "observation": "反转面数=4（LlmAdapter/工具桥/审批/SessionPersistence），逐面结论=LlmAdapter:否，工具桥:否，审批:否，SessionPersistence:否",
+      "verdict": "pass",
+      "source": {
+        "authority": "CI 任务工件（tools/snapshot，可复算）"
+      },
+      "artifactHashes": [
+        {
+          "path": "evidence/GATE-002/C10/snapshot-report.json",
+          "hash": "f169af885af8805d3957aa13e8932877bb09953058c9cde579bfda9ed906af3b"
+        }
+      ],
+      "implementer": "P0-A6 build agent（单会话）",
+      "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
+      "ranAt": "2026-10-07T04:37:16.554Z",
+      "chainHash": "6f6c3a98fafef30951d93720afde3d0154241a71fe48b150ed1cf1d2a78a6037"
+    }
+  ],
+  "conclusion": "fail",
+  "conclusionRule": "pass 当且仅当全部行 pass（G-R5）"
+}

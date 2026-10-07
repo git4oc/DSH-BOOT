@@ -1,0 +1,22 @@
+{
+  "train": "0.2.0-rc.2",
+  "faces": [
+    {
+      "face": "LlmAdapter",
+      "changed": false
+    },
+    {
+      "face": "工具桥",
+      "changed": false
+    },
+    {
+      "face": "审批",
+      "changed": false
+    },
+    {
+      "face": "SessionPersistence",
+      "changed": false
+    }
+  ],
+  "scopeNote": "diff 范围收敛到 4 个反转面（不得全量 287 包）"
+}

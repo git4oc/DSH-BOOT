@@ -1,0 +1,15 @@
+{
+  "domainId": "gate002-domain-2",
+  "tenantId": "dev-tenant",
+  "isolationGroupId": "dev-isolation",
+  "imageDigest": "sha512-image",
+  "mountDigest": "sha512-mount",
+  "runtimeConfigDigest": "sha512-runtime",
+  "profileGenerationDigest": "sha512-profile",
+  "criticalRowsDigest": "ddc4b0498ad8c5593bc31ff00288d75eefbd4b916e92f9c2cc28f5ef05d92aa2",
+  "denylistDigest": "37adc9ae436ef3f765b9f7d0c8d047c794f29020390cb2e51b3e5a5c228a38d0",
+  "results": {},
+  "createdAt": "2026-10-07T04:37:16.501Z",
+  "retainedAt": "WORM://evidence/GATE-002/domain-evidence/gate002-domain-2/",
+  "chainHash": "e18320d06ae6a2f953c12c48126f8c2844253890309e6bd71b983df2c30504d6"
+}

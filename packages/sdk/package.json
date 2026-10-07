@@ -1,0 +1,15 @@
+{
+  "name": "@dsh-boot/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenAPI 生成物，不手写（ENG-020 判据③：全部文件带 @generated 头，CI 校验生成物与 OpenAPI 一致）。",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@dsh-boot/protocol": "workspace:*"
+  }
+}

@@ -1,0 +1,125 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
+  apps/control:
+    dependencies:
+      '@dsh-boot/control-plane':
+        specifier: workspace:*
+        version: link:../../packages/control-plane
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@dsh-boot/reverse-gateway':
+        specifier: workspace:*
+        version: link:../../packages/reverse-gateway
+      '@dsh-boot/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+
+  apps/domain:
+    dependencies:
+      '@dsh-boot/control-plane':
+        specifier: workspace:*
+        version: link:../../packages/control-plane
+      '@dsh-boot/domain-bridge':
+        specifier: workspace:*
+        version: link:../../packages/domain-bridge
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@dsh-boot/reverse-gateway':
+        specifier: workspace:*
+        version: link:../../packages/reverse-gateway
+
+  packages/control-plane:
+    dependencies:
+      '@dsh-boot/domain-bridge':
+        specifier: workspace:*
+        version: link:../domain-bridge
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@dsh-boot/reverse-gateway':
+        specifier: workspace:*
+        version: link:../reverse-gateway
+
+  packages/domain-bridge:
+    dependencies:
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
+  packages/protocol: {}
+
+  packages/reverse-gateway:
+    dependencies:
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
+  packages/sdk:
+    dependencies:
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
+  tests/contract:
+    dependencies:
+      '@dsh-boot/control-plane':
+        specifier: workspace:*
+        version: link:../../packages/control-plane
+      '@dsh-boot/domain-bridge':
+        specifier: workspace:*
+        version: link:../../packages/domain-bridge
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@dsh-boot/reverse-gateway':
+        specifier: workspace:*
+        version: link:../../packages/reverse-gateway
+      '@dsh-boot/tools-snapshot':
+        specifier: workspace:*
+        version: link:../../tools/snapshot
+
+  tools/snapshot:
+    dependencies:
+      '@dsh-boot/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+
+packages:
+
+  '@types/node@26.6.4':
+    resolution: {integrity: sha512-ldVPDCzj7fsaGZrLB0NuHuTvJcsNasysBAqMolr/cgxrLd1xbqxIr3XJiPnHHJUCxj5sNF1vnRj9aWnrVh5Jcg==}
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
+
+snapshots:
+
+  '@types/node@26.6.4':
+    dependencies:
+      undici-types: 8.9.0
+
+  typescript@5.9.3: {}
+
+  undici-types@8.9.0: {}

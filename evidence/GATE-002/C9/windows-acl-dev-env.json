@@ -1,0 +1,6 @@
+{
+  "verdict": "fail",
+  "ranInContainer": false,
+  "reason": "未检测到 Windows 容器上下文（containerprofile.txt / CONTAINER_SANDBOX_MOUNT_POINT 均缺失）——文档现有结论来自非容器 README，不得复用（D13）",
+  "tests": []
+}

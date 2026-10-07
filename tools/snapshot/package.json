@@ -1,0 +1,10 @@
+{
+  "name": "@dsh-boot/tools-snapshot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "内核 .d.ts 快照生成与 diff（ENG-020）。快照 manifest schema 归 packages/protocol（LAYER-001 §4 O-3）。",
+  "type": "module",
+  "dependencies": {
+    "@dsh-boot/protocol": "workspace:*"
+  }
+}

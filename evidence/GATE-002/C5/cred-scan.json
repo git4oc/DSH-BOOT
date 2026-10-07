@@ -1,0 +1,11 @@
+{
+  "denylist": [
+    "dsh-credentials-local",
+    "dsh-credentials-env",
+    "dsh-credentials-vault"
+  ],
+  "seedPluginSet": [
+    "dsh-base"
+  ],
+  "scanHits": []
+}

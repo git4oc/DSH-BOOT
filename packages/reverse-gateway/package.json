@@ -1,0 +1,15 @@
+{
+  "name": "@dsh-boot/reverse-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "反向 I/O 端点与桩共用的接口定义与实现（ENG-020）。",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@dsh-boot/protocol": "workspace:*"
+  }
+}

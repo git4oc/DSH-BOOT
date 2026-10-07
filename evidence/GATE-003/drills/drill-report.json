@@ -1,0 +1,101 @@
+{
+  "drills": [
+    {
+      "drill": "DRL-01",
+      "name": "kill -9 跨实例续跑 + 副作用台账核对",
+      "verdict": "pass",
+      "detail": {
+        "eventsMonotonic": true,
+        "closers": 3,
+        "spans": [
+          "lock-acquired",
+          "read-closer",
+          "fold",
+          "connector-ready",
+          "tools-ready"
+        ],
+        "lostState": {
+          "shellState": false,
+          "mcpSubprocesses": false,
+          "runCodeIntermediates": false,
+          "nestedInnerSideEffects": false
+        },
+        "ledgerBlocked": true
+      },
+      "missingInfra": null,
+      "ranAt": "2026-10-07T12:40:59.968Z"
+    },
+    {
+      "drill": "DRL-02",
+      "name": "迁移三点注入失败",
+      "verdict": "pass",
+      "detail": {
+        "runs": [
+          {
+            "injectAt": "HANDOFF_ARMED",
+            "finalState": "OWNED",
+            "epoch": 1
+          },
+          {
+            "injectAt": "SOURCE_RELEASED",
+            "finalState": "OWNED",
+            "epoch": 1
+          },
+          {
+            "injectAt": "COMMIT",
+            "finalState": "OWNED",
+            "epoch": 1
+          }
+        ],
+        "noWriterAlert": {
+          "breached": true,
+          "migrationId": "m-alert",
+          "state": "PENDING",
+          "sloMs": 300000
+        }
+      },
+      "missingInfra": null,
+      "ranAt": "2026-10-07T12:40:59.971Z"
+    },
+    {
+      "drill": "DRL-05",
+      "name": "审计服务 6 h 故障",
+      "verdict": "pass",
+      "detail": {
+        "auditTombstones": 40,
+        "acceptedRate": 1,
+        "billingBufferUnaffected": true,
+        "auditRetained": 10
+      },
+      "missingInfra": null,
+      "ranAt": "2026-10-07T12:40:59.971Z"
+    },
+    {
+      "drill": "DRL-03",
+      "name": "MCP 重连耗尽 → 自动重载 → 工具恢复",
+      "verdict": "blocked",
+      "detail": "连接器控制器状态机与重连预算逻辑属核内组件（REL-022/023），未 vendor（D-13）——无法诚实演练",
+      "missingInfra": "vendored connector controller",
+      "ranAt": "2026-10-07T12:40:59.971Z"
+    },
+    {
+      "drill": "DRL-04",
+      "name": "反向网关 5 min 与 30 min 不可用",
+      "verdict": "blocked",
+      "detail": "降级阶梯（L1→L1b→L3）转移与错误预算记账属核内行为（REL-044/045），网关桩旋钮可注入 5xx 但域内降级反应无核内组件不可观测（D-13）",
+      "missingInfra": "vendored degradation ladder",
+      "ranAt": "2026-10-07T12:40:59.971Z"
+    },
+    {
+      "drill": "DRL-06",
+      "name": "单节点 / 单 AZ 故障",
+      "verdict": "blocked",
+      "detail": "多节点/多 AZ 拓扑与跨 AZ 快照恢复需真实部署环境（REL-060/061/062），单进程沙箱无节点/ AZ 概念",
+      "missingInfra": "multi-node topology",
+      "ranAt": "2026-10-07T12:40:59.971Z"
+    }
+  ],
+  "passCount": 3,
+  "total": 6,
+  "gate003Condition5": "fail"
+}

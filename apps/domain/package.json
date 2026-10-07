@@ -1,0 +1,13 @@
+{
+  "name": "@dsh-boot/apps-domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "域镜像入口与 Cordis Profile 装配（ENG-020）。消费内部反向 I/O 契约，不依赖对外 SDK（LAYER-001 §4 O-1）。",
+  "type": "module",
+  "dependencies": {
+    "@dsh-boot/protocol": "workspace:*",
+    "@dsh-boot/domain-bridge": "workspace:*",
+    "@dsh-boot/reverse-gateway": "workspace:*",
+    "@dsh-boot/control-plane": "workspace:*"
+  }
+}

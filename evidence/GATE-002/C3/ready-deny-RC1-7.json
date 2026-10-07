@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "check": "RC-1",
+      "ready": false,
+      "active": false
+    },
+    {
+      "check": "RC-2",
+      "ready": false,
+      "active": false
+    },
+    {
+      "check": "RC-3",
+      "ready": false,
+      "active": false
+    },
+    {
+      "check": "RC-4",
+      "ready": false,
+      "active": false
+    },
+    {
+      "check": "RC-5",
+      "ready": false,
+      "active": false
+    },
+    {
+      "check": "RC-6",
+      "ready": false,
+      "active": false
+    },
+    {
+      "check": "RC-7",
+      "ready": true,
+      "active": false
+    }
+  ],
+  "source": "out-of-domain"
+}

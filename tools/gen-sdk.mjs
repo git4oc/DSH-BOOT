@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+/**
+ * `packages/sdk` 生成器（`ENG-020`）：由 `contracts/openapi.json` 生成，不手写。
+ * `--check` 模式：重放生成并与现存文件比对，不一致即退出 1（CI 校验生成物与 OpenAPI 一致）。
+ */
+import { readFileSync, writeFileSync } from "node:fs";
+
+const spec = JSON.parse(readFileSync("contracts/openapi.json", "utf8"));
+const operations = [];
+for (const [path, methods] of Object.entries(spec.paths ?? {})) {
+  for (const [method, op] of Object.entries(methods)) {
+    if (typeof op !== "object" || op === null) continue;
+    operations.push({ path, method: method.toUpperCase(), operationId: op.operationId ?? `${method}${path.replaceAll("/", "_")}` });
+  }
+}
+operations.sort((a, b) => (a.operationId < b.operationId ? -1 : 1));
+
+const lines = [
+  "// @generated",
+  "// `@dsh-boot/sdk` — OpenAPI 生成物（`contracts/openapi.json`），不手写（`ENG-020` 判据③）。",
+  "// 任何修改都必须通过生成器重放（node tools/gen-sdk.mjs），CI 校验生成物与 OpenAPI 一致。",
+  `export const OPENAPI_VERSION = ${JSON.stringify(spec.openapi ?? "3.1")} as const;`,
+  `export const INFO_TITLE = ${JSON.stringify(spec.info?.title ?? "DSH API")} as const;`,
+  "",
+  "export interface SdkOperation {",
+  "  readonly operationId: string;",
+  "  readonly method: string;",
+  "  readonly path: string;",
+  "}",
+  "",
+  "export const OPERATIONS: readonly SdkOperation[] = [",
+  ...operations.map((op) => `  { operationId: ${JSON.stringify(op.operationId)}, method: ${JSON.stringify(op.method)}, path: ${JSON.stringify(op.path)} },`),
+  "] as const;",
+  "",
+  "export const OPERATION_IDS: readonly string[] = OPERATIONS.map((op) => op.operationId);",
+  "",
+];
+
+const generated = `${lines.join("\n")}`;
+if (process.argv.includes("--check")) {
+  const existing = readFileSync("packages/sdk/src/index.ts", "utf8");
+  if (existing !== generated) {
+    console.error("SDK 与 OpenAPI 不一致：重放 node tools/gen-sdk.mjs（ENG-020）");
+    process.exit(1);
+  }
+  console.log(`[gen-sdk] 一致（${operations.length} 个操作）`);
+} else {
+  writeFileSync("packages/sdk/src/index.ts", generated, { encoding: "utf8" });
+  console.log(`[gen-sdk] 已生成 ${operations.length} 个操作`);
+}

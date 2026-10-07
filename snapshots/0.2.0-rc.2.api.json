@@ -1,0 +1,7 @@
+{
+  "train": "0.2.0-rc.2",
+  "generatedAt": "2026-10-07T04:24:47.925Z",
+  "packageCount": 0,
+  "note": "内核包未 vendor（node_modules/@deepseek-ai 不存在）——快照 0 包；vendor 后重新生成本文件即入 diff 门禁",
+  "packages": {}
+}

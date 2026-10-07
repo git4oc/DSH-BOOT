@@ -1,0 +1,8 @@
+{
+  "missing": true,
+  "taOutOfRange": true,
+  "turnTooLong": true,
+  "taNotLtTurn": true,
+  "tmNotLtTurn": true,
+  "validPasses": true
+}

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ES2022",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/src/**/*.d.ts",
+    "apps/*/src/**/*.ts",
+    "tools/snapshot/src/**/*.ts",
+    "tests/contract/src/**/*.ts",
+    "tests/contract/fixtures/**/*.ts"
+  ]
+}

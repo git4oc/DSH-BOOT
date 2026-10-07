@@ -1,0 +1,31 @@
+# 最小拓扑声明（`ENG-042`：单域 + 反向网关桩 + 内存 attest + 种子 Profile + 本地对象存储替身）。
+# 说明：P-1 阶段域镜像尚未构建（apps/domain 的入口与 Cordis Profile 装配在 P0-A4 落地），
+# 拓扑执行由等价脚本承载（`ENG-042` 允许「dev/compose.yml（或等价脚本）」）：
+#   pnpm dev:up     # 起反向网关桩（含内存 attest）+ 种子 Profile + 对象存储目录
+#   pnpm dev:smoke  # 一轮 turn.started → message.delta → turn.completed 事件序断言
+#   pnpm gate:001   # 上述 + 桩/attest 自检 + 逃生门双向断言 + 生产态拒绝 "*"
+# 域镜像就绪后，本文件的 domain 服务换为真实镜像，桩契约不变。
+services:
+  reverse-gateway-stub:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile.gateway-stub
+    ports:
+      - "7301:7301"
+    environment:
+      - OV_ENV=dev
+      - DSH_GATEWAY_PORT=7301
+    volumes:
+      - ./seed:/app/seed:ro
+      - ./object-store:/app/object-store
+  domain:
+    # P0-A4 落地前不启动（apps/domain 镜像尚未构建）
+    profiles: ["with-domain"]
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile.domain
+    environment:
+      - OV_ENV=dev
+      - DSH_GATEWAY_URL=http://reverse-gateway-stub:7301
+    depends_on:
+      - reverse-gateway-stub

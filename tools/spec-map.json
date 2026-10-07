@@ -1,0 +1,152 @@
+{
+  "$comment": "SPEC-03 ENG-050 的路径→需求映射表。CI 任务 spec:consistency 用它判定：触及下列路径的 PR 必须在 diff 或描述中出现对应的 ENG-* 引用，否则失败并要求评审签署。",
+  "version": "1.0",
+  "upstream": "spec/03-实现与工程规格.md ENG-050；SPEC-00 §8 变更控制",
+  "rules": {
+    "anyOf": ["diff 文本中出现该条目任一的 requiredIds", "PR 描述中出现该条目任一的 requiredIds", "本条目标记为 reviewOnly（须评审签署方可豁免）"],
+    "onViolation": "CI 失败并打印「应引用清单」"
+  },
+  "regions": [
+    {
+      "id": "R-1",
+      "name": "工具注册桥（反转面 2）",
+      "paths": [
+        "packages/domain-bridge/src/register.ts",
+        "packages/domain-bridge/src/tools/**",
+        "packages/domain-bridge/src/guard.ts"
+      ],
+      "requiredIds": ["ENG-001", "ENG-002", "ENG-003", "ENG-004"],
+      "note": "含 MCP 发现闸门与全局 guard 安装。改这里必须同时复核 docs/reversal-contracts.md §3。"
+    },
+    {
+      "id": "R-2",
+      "name": "LlmAdapter（反转面 1）",
+      "paths": [
+        "packages/domain-bridge/src/llm/**"
+      ],
+      "requiredIds": ["ENG-005", "ENG-006", "ENG-007", "ENG-008"],
+      "note": "改这里必须复核 docs/reversal-contracts.md §2（含 GenerateOptions 深冻结与 attributionHeaders 是模块级函数）。"
+    },
+    {
+      "id": "R-3",
+      "name": "审批应答者（反转面 3）",
+      "paths": [
+        "packages/domain-bridge/src/approval/**"
+      ],
+      "requiredIds": ["ENG-009", "ENG-010", "ENG-011", "ENG-012"],
+      "note": "禁止任何跨 callId 的授权复用（ENG-010）。改这里必须复核 docs/reversal-contracts.md §4。"
+    },
+    {
+      "id": "R-4",
+      "name": "SessionPersistence 提供方（反转面 4）",
+      "paths": [
+        "packages/domain-bridge/src/persistence/**"
+      ],
+      "requiredIds": ["ENG-013", "ENG-014", "ENG-015", "ENG-016", "ENG-017", "ENG-018", "ENG-019"],
+      "note": "语义级契约见 docs/reversal-contracts.md §5.3；错误类全集见 §5.4（8 个类，且 SessionOwnershipLostError 无参考行为基线）。"
+    },
+    {
+      "id": "R-5",
+      "name": "Profile 校验",
+      "paths": [
+        "packages/control-plane/src/profile/**",
+        "contracts/profile.schema.json"
+      ],
+      "requiredIds": ["ENG-025", "ENG-029", "ENG-030", "ENG-039", "ENG-045", "ENG-062"],
+      "note": "schema 的语义检查项见 contracts/profile.schema.json 的 x-ov-semanticChecks（9 项，必须逐项实现）。"
+    },
+    {
+      "id": "R-6",
+      "name": "域就绪判定",
+      "paths": [
+        "packages/control-plane/src/ready/**",
+        "apps/domain/src/selfcheck.ts"
+      ],
+      "requiredIds": ["ENG-026", "ENG-027", "ENG-040"],
+      "note": "门禁只接受域外事实（§4.1.2 收口修正）；域内自报只能作交叉核验。改这里必须同时复核 GATE-002 条件 3/4。"
+    },
+    {
+      "id": "R-7",
+      "name": "版本列车纪律",
+      "paths": [
+        "packages/control-plane/src/train/**",
+        "tools/snapshot/**"
+      ],
+      "requiredIds": ["ENG-032", "ENG-033", "ENG-036", "ENG-037", "ENG-038"],
+      "note": "C33/C34：peer 是无范围精确 pin，不匹配的行被静默 disabled 而域照常启动。快照 diff 范围已收敛到 4 个反转面（GATE-002 条件 10）。"
+    },
+    {
+      "id": "R-8",
+      "name": "契约测试套件",
+      "paths": [
+        "tests/contract/**"
+      ],
+      "requiredIds": ["ENG-031", "ENG-046", "ENG-051"],
+      "note": "发行版不含契约测试套件（C41），本套件为自建。必须覆盖 A–F 六项且可单面加载。"
+    },
+    {
+      "id": "R-9",
+      "name": "DevEx 逃生门",
+      "paths": [
+        "dev/**",
+        "packages/control-plane/src/dev/**"
+      ],
+      "requiredIds": ["ENG-042", "ENG-043", "ENG-044", "ENG-047"],
+      "note": "开发态 toolAllowlist 逃生门必须可开关，生产态拒绝 '*'。改这里必须复核 GATE-001。"
+    },
+    {
+      "id": "R-10",
+      "name": "模块与层依赖",
+      "paths": [
+        "packages/*/package.json",
+        "pnpm-workspace.yaml",
+        "tools/check-deps.mjs"
+      ],
+      "requiredIds": ["ENG-020", "ENG-021", "ENG-022", "ENG-024"],
+      "note": "依赖方向矩阵见 docs/layer-dependency-matrix.md。packages/protocol 不得依赖任何其他 @dsh-boot/* 包。"
+    },
+    {
+      "id": "R-11",
+      "name": "反向网关与契约端点",
+      "paths": [
+        "packages/reverse-gateway/src/**",
+        "contracts/openapi.json"
+      ],
+      "requiredIds": ["ENG-007", "ENG-008", "ENG-012", "ENG-041", "ENG-043", "ENG-044"],
+      "note": "硬端点一律 fail-closed；/internal/kernel/attest 契约必须定义（ENG-041）。"
+    },
+    {
+      "id": "R-12",
+      "name": "审计与最小集",
+      "paths": [
+        "packages/control-plane/src/audit/**",
+        "packages/reverse-gateway/src/audit/**"
+      ],
+      "requiredIds": ["ENG-028", "ENG-041"],
+      "reviewOnly": true,
+      "note": "跨 SPEC-01/SPEC-02 归口。最小审计集记不下即拒绝该动作（SEC-070）——改动须安全评审会签。"
+    },
+    {
+      "id": "R-13",
+      "name": "CI 流水线定义",
+      "paths": [
+        ".ci/**",
+        ".github/workflows/**"
+      ],
+      "requiredIds": ["ENG-048", "ENG-049", "ENG-050", "ENG-051", "ENG-052", "ENG-053"],
+      "reviewOnly": true,
+      "note": "改门禁必须评审签署——放宽门禁等于放宽约束。"
+    }
+  ],
+  "exemptions": {
+    "description": "下列路径不参与一致性检查（纯文档、生成物、依赖锁）。",
+    "paths": [
+      "docs/**",
+      "spec/**",
+      "spec/baselines/**",
+      "packages/sdk/**",
+      "pnpm-lock.yaml",
+      "**/*.md"
+    ]
+  }
+}

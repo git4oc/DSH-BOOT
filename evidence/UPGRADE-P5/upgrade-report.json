@@ -1,0 +1,95 @@
+{
+  "results": [
+    {
+      "gate": "契约测试:contract:llm",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:tools",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:approval",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:ready",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:persistence-l1",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:pool",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:identity-quota",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:registry",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:session-ops",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:contract:lifecycle",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "契约测试:fixtures:selftest",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "快照 diff",
+      "status": "pass",
+      "output": "exit 0"
+    },
+    {
+      "gate": "列车一致性",
+      "status": "pass",
+      "output": "单值：1.0.0"
+    },
+    {
+      "gate": "灰度记录",
+      "status": "pass",
+      "output": "evidence/UPGRADE-P5/canary-record.json"
+    },
+    {
+      "gate": "就绪复验记录",
+      "status": "pass",
+      "output": "evidenceHash=10b0678eb9776903"
+    },
+    {
+      "gate": "P-1 ctx.tools.register 唯一注册入口",
+      "status": "pass",
+      "output": "注册入口仍在域内桥（复核通过）"
+    },
+    {
+      "gate": "P-2 域镜像+只读 Profile 属 TCB",
+      "status": "pass",
+      "output": "attest：设计 §5.3.1 第 6 项未变（容器挂载只读）"
+    },
+    {
+      "gate": "P-3 域内读不隔离",
+      "status": "pass",
+      "output": "attest：设计 C44 未变（need-to-know 走团队/用户级隔离组）"
+    }
+  ],
+  "failedCount": 0
+}

@@ -1,0 +1,2 @@
+.tools.register( 命中 1 处：D:/proJects/dsh-boot/packages/domain-bridge/src/register.ts
+.tools.restrict( 命中 0 处

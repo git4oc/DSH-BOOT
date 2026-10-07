@@ -1,0 +1,116 @@
+name: contract
+
+# 自建契约测试套件与内核 .d.ts 快照门禁（ENG-031 / ENG-032 / ENG-033 / ENG-034 / ENG-035 / ENG-051 / ENG-052）
+#
+#   contract      —— A–F 六项（node --test）+ 全部契约脚本，强制全量（ENG-031 判据④ / ENG-051 判据①）
+#   snapshot      —— 只读快照 diff（ENG-032 判据② / ENG-052：CI 不得自动改写快照）
+#   gate-006      —— 三行状态 contract=pass snapshot.diffLines=0 mixedVersions=0（ENG-035 判据①）
+#   upgrade-gate  —— contract → snapshot:diff → gate-006 顺序执行（ENG-034 判据①）
+#
+# 路径过滤：对 persistence/snapshot/ready 路径强制全量，不得只跑受影响子集（ENG-051 判据①）。
+# 路径过滤配置由 tools/check-ci-paths.mjs 断言（缺全量即失败）。
+
+on:
+  push:
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "tools/**"
+      - "tests/**"
+      - "snapshots/**"
+      - "packages/domain-bridge/src/persistence/**"
+      - "packages/control-plane/src/ready/**"
+      - "tools/snapshot/**"
+      - "tests/contract/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/contract.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "tools/**"
+      - "tests/**"
+      - "snapshots/**"
+      - "packages/domain-bridge/src/persistence/**"
+      - "packages/control-plane/src/ready/**"
+      - "tools/snapshot/**"
+      - "tests/contract/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: 契约测试套件 A–F 全量（ENG-031 / ENG-051）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # A–F 六项（node --test 与 CI 两处可跑；日志按 A–F 分列，ENG-031 判据①④）
+      - name: A–F 契约测试（node --test）
+        run: node --test tests/contract/src/persistence/contract.test.mjs
+
+      # 完整套件：强制全量，不得只跑受影响子集（ENG-051 判据①）
+      - name: 契约脚本全量
+        run: |
+          pnpm contract:llm
+          pnpm contract:tools
+          pnpm contract:approval
+          pnpm contract:ready
+          pnpm fixtures:selftest
+
+      - name: 汇总
+        if: success()
+        run: echo "contract: A..F 全通过"
+
+  snapshot:
+    name: 内核 .d.ts 快照 diff（ENG-032 / ENG-052）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 只读校验：当前 node_modules 的 .d.ts 与入库快照一致（ENG-052 判据①）。
+      # CI 不自动改写快照（改写须走评审 PR，ENG-052 判据②）。
+      - name: 快照 diff（只读）
+        run: pnpm snapshot:diff
+
+  gate-006:
+    name: GATE-006 三行状态（ENG-035）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 输出 contract=pass snapshot.diffLines=0 mixedVersions=0；任一非通过值非零退出
+      - name: 运行 GATE-006
+        run: pnpm gate:006
+
+  upgrade-gate:
+    name: 升级门禁 contract → snapshot:diff → gate-006（ENG-034）
+    runs-on: ubuntu-latest
+    needs: [contract, snapshot, gate-006]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 顺序执行 contract → snapshot:diff → gate-006，任一失败即整任务失败
+      - name: 顺序门禁
+        run: |
+          pnpm contract:ready
+          pnpm snapshot:diff
+          pnpm gate:006

@@ -1,0 +1,37 @@
+{
+  "name": "dsh-boot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dsh-boot monorepo 骨架。包划分与职责对应 ENG-020；依赖方向由 tools/check-deps.mjs 按 LAYER-001 强制（ENG-021/022/024）。",
+  "scripts": {
+    "spec:deps": "node tools/check-deps.mjs",
+    "spec:id-format": "node tools/check-id-format.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev:up": "node dev/up.mjs",
+    "dev:down": "node dev/down.mjs",
+    "dev:smoke": "node dev/smoke.mjs",
+    "gate:001": "node dev/gate.mjs",
+    "contract:llm": "node tests/contract/src/llm-adapter/contract.mjs",
+    "contract:tools": "node tests/contract/src/tools-bridge/contract.mjs",
+    "contract:approval": "node tests/contract/src/approval/contract.mjs",
+    "contract:ready": "node tests/contract/src/ready/contract.mjs",
+    "contract:persistence-l1": "node tests/contract/src/persistence/l1-contract.mjs",
+    "contract:pool": "node tests/contract/src/pool/contract.mjs",
+    "contract:identity-quota": "node tests/contract/src/identity-quota/contract.mjs",
+    "contract:registry": "node tests/contract/src/registry/contract.mjs",
+    "contract:session-ops": "node tests/contract/src/session-ops/contract.mjs",
+    "contract:lifecycle": "node tests/contract/src/lifecycle/contract.mjs",
+    "gen-sdk": "node tools/gen-sdk.mjs",
+    "check:sdk-sync": "node tools/gen-sdk.mjs --check",
+    "test:contract": "node --test tests/contract/src/persistence/contract.test.mjs",
+    "fixtures:selftest": "node tests/contract/fixtures/selftest.mjs",
+    "snapshot:generate": "node tools/snapshot/generate.mjs",
+    "snapshot:diff": "node tools/snapshot/diff.mjs",
+    "gate:006": "node tools/gate-006.mjs",
+    "check:ci-paths": "node tools/check-ci-paths.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "^5.6.0"
+  }
+}

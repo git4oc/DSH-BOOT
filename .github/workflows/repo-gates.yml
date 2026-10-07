@@ -1,0 +1,85 @@
+name: repo-gates
+
+# 仓库结构与依赖方向门禁（ENG-020 / ENG-021 / ENG-022 / ENG-024 / ENG-048）
+#   1. spec:deps      —— tools/check-deps.mjs：白名单矩阵逐条比对 + DFS 零环
+#                        + 反转面目录数断言 + ENG-022 三条独立断言（LAYER-001 §6 五项）
+#   2. spec:id-format —— tools/check-id-format.mjs：需求 ID 正则校验（ENG-048 判据①③）
+#
+# 两项校验器均为零依赖 Node 脚本（只读 package.json 与源文件），无需安装依赖。
+
+on:
+  push:
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "tools/**"
+      - "tests/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/repo-gates.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "apps/**"
+      - "tools/**"
+      - "tests/**"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - ".github/workflows/repo-gates.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spec-deps:
+    name: 层依赖方向与反转面目录数（ENG-021 / ENG-022 / ENG-024）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 白名单矩阵逐条比对 + DFS 零环 + 反转面目录数 ≤ 4；违规打印
+      # 「包A → 包B 违反方向（依据 ENG-021 / LAYER-001 §3）」并阻断合并。
+      - name: 运行层依赖校验器
+        run: node tools/check-deps.mjs
+
+      - name: 失败时输出 JSON 明细
+        if: failure()
+        run: node tools/check-deps.mjs --json > deps-report.json || true
+
+      - name: 上传报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deps-report
+          path: deps-report.json
+          if-no-files-found: ignore
+
+  spec-id-format:
+    name: 需求 ID 正则校验（ENG-048）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 代码、测试与配置中形如需求 ID 的记号必须为「段前缀 + 恰好三位数字」，
+      # 段前缀落在 SPEC-00 §4.1 分配段内；逐条报告 文件:行 违规ID，任一违规非零退出。
+      - name: 运行需求 ID 格式校验器
+        run: node tools/check-id-format.mjs
+
+      - name: 失败时输出 JSON 明细
+        if: failure()
+        run: node tools/check-id-format.mjs --json > id-format-report.json || true
+
+      - name: 上传报告
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: id-format-report
+          path: id-format-report.json
+          if-no-files-found: ignore

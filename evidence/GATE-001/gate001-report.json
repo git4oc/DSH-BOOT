@@ -1,0 +1,98 @@
+{
+  "gate": "GATE-001",
+  "verdict": "pass",
+  "at": "2026-10-07T04:11:41.150Z",
+  "checks": [
+    {
+      "name": "dev.up.elapsed",
+      "verdict": "pass",
+      "detail": "topology ready in 255ms (limit 300000ms, ENG-042 判据②)"
+    },
+    {
+      "name": "gateway.self.routes",
+      "verdict": "pass",
+      "detail": "route table has exactly 10 §6.3 endpoints (ENG-043 判据①)"
+    },
+    {
+      "name": "gateway.attribution.400",
+      "verdict": "pass",
+      "detail": "missing attribution headers yield 400 (ENG-008 判据③), got 400"
+    },
+    {
+      "name": "gateway.protocolVersion.426",
+      "verdict": "pass",
+      "detail": "incompatible protocolVersion yields 426, got 426"
+    },
+    {
+      "name": "gateway.attribution.allHardEndpoints",
+      "verdict": "pass",
+      "detail": "every hard endpoint rejects missing attribution with 400 (ENG-008 判据③)"
+    },
+    {
+      "name": "knob.ttfb",
+      "verdict": "pass",
+      "detail": "TTFB delay 400ms observed 410ms → triggers T_m path (ENG-043 判据②)"
+    },
+    {
+      "name": "knob.aborted",
+      "verdict": "pass",
+      "detail": "aborted stream ends with explicit done/aborted frame → 轮次中断 (ENG-043 判据②)"
+    },
+    {
+      "name": "knob.adapterError",
+      "verdict": "pass",
+      "detail": "adapter-error stream carries explicit error frame + done/adapter-error (ENG-043 判据②)"
+    },
+    {
+      "name": "knob.approvalNoResponse",
+      "verdict": "pass",
+      "detail": "approval no-response knob hangs the request → client T_a timeout (ENG-043 判据②)"
+    },
+    {
+      "name": "attest.accept",
+      "verdict": "pass",
+      "detail": "clean boot → accept + degradation L0"
+    },
+    {
+      "name": "attest.missingField.deny",
+      "verdict": "pass",
+      "detail": "missing-field request → deny (ENG-044 判据①)"
+    },
+    {
+      "name": "attest.trigger.enum",
+      "verdict": "pass",
+      "detail": "unknown trigger → deny (触发原因枚举闭合)"
+    },
+    {
+      "name": "attest.forbiddenFiber",
+      "verdict": "pass",
+      "detail": "forbidden fiber (hmr) → deny"
+    },
+    {
+      "name": "attest.toolsChange.resync",
+      "verdict": "pass",
+      "detail": "tools-change trigger → resync-profile"
+    },
+    {
+      "name": "attest.fourValues.degradation",
+      "verdict": "pass",
+      "detail": "four-value response + degradation level override → drain-domain/L2 (ENG-044)"
+    },
+    {
+      "name": "smoke.fullTurn",
+      "verdict": "pass",
+      "detail": "turn events: turn.started → message.delta → message.delta → message.delta → message.delta → message.delta → message.delta → message.delta → message.delta → message.delta → message.delta → tool.call → approval.requested → approval.decided → turn.completed"
+    },
+    {
+      "name": "toolAllowlist.escapeHatch",
+      "verdict": "pass",
+      "detail": "dev 接受 [\"*\"] 与缺省（含 ESCAPE_HATCH_ACTIVE 告警）；生产态拒绝 [\"*\"] / [] / 缺省 / glob（ENG-045 判据①）"
+    },
+    {
+      "name": "seed.profile.dev",
+      "verdict": "pass",
+      "detail": "种子 Profile（dev，toolAllowlist [\"*\"]）通过校验且携带逃生门告警"
+    }
+  ],
+  "problems": []
+}

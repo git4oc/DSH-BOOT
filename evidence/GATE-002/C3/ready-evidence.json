@@ -1,0 +1,4 @@
+{
+  "disabledInjectionReady": false,
+  "note": "RC-1 disabled 关键行注入 ⇒ ready=false；七条判定输入均为域外事实"
+}

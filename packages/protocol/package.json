@@ -1,0 +1,16 @@
+{
+  "name": "@dsh-boot/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Profile JSON Schema、反向 I/O 类型、事件类型。仅类型与 schema，无运行期依赖（ENG-020 判据②：dependencies/peerDependencies 不含任何 @dsh-boot/* 与内核运行期包）。",
+  "type": "module",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts"
+    }
+  },
+  "dependencies": {},
+  "peerDependencies": {},
+  "devDependencies": {}
+}

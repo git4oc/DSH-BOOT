@@ -1,0 +1,484 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh-boot.internal/schema/profile/v1.json",
+  "title": "Runtime Profile",
+  "description": "域外生成的 Runtime Profile。设计文档 §6.2；SPEC-01 交付物 2；SPEC-03 ENG-025/029/030/045。这是域内装配的唯一输入，域只接收已裁决结果。",
+  "type": "object",
+  "additionalProperties": false,
+
+  "required": [
+    "profileId",
+    "protocolVersion",
+    "trainVersion",
+    "tenantId",
+    "isolationGroupId",
+    "residencyRegion",
+    "workspaces",
+    "presetId",
+    "pluginSet",
+    "removedRows",
+    "hmr",
+    "toolAllowlist",
+    "skillRoots",
+    "sandboxMode",
+    "sandboxModeCeiling",
+    "permissionPresets",
+    "connectors",
+    "deadlines",
+    "buffers",
+    "modelDegradation",
+    "sessionProjectionCache",
+    "quota",
+    "gateway",
+    "requiredPlugins"
+  ],
+
+  "properties": {
+    "profileId": { "type": "string", "minLength": 1 },
+    "protocolVersion": { "const": "1.0" },
+
+    "trainVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "版本列车单值（C33）。定义本域内全部 @deepseek-ai/dsh-* 与 @deepseek-ai/cordis 的期望版本。恰好一个值——不是数组。",
+      "$comment": "ENG-036 / EVO-001：缺失、为数组、或含两个值时返回 EVO_TRAIN_VERSION_AMBIGUOUS"
+    },
+
+    "tenantId": { "type": "string", "minLength": 1 },
+    "isolationGroupId": { "type": "string", "minLength": 1 },
+
+    "residencyRegion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "数据驻留区域。EVO-026：Profile **必须**含本字段；域启动时断言其与本域所在区域一致，**不一致即拒绝 ready**。",
+      "$comment": "区域分布报表必须能按租户列出所有数据副本所在区域；出现未登记的跨区副本即不合格。schema 只能保证「存在且非空」，「与域实际区域一致」是域启动断言（PC-011）。"
+    },
+
+    "workspaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["workspaceId", "root", "writable"],
+        "properties": {
+          "workspaceId": { "type": "string", "minLength": 1 },
+          "root": {
+            "type": "string",
+            "pattern": "^/",
+            "description": "域内绝对路径。必须为绝对路径（相对值在加载时拒绝）。"
+          },
+          "writable": {
+            "type": "boolean",
+            "description": "false = 租户级只读共享工作区。不突破单一可写根（C27）：读不受限，只读挂载不改变威胁模型。"
+          }
+        }
+      },
+      "$comment": "域内 workspace 之间不是安全边界，且读不隔离（C44）。需 need-to-know 者走独立隔离组。"
+    },
+
+    "presetId": {
+      "type": "string",
+      "minLength": 1,
+      "$comment": "EVO-011：preset id 只增不删；缺失则拒绝恢复（C20）。会话创建后 preset 不可变。"
+    },
+
+    "pluginSet": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "integrity", "tier"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "version": { "type": "string", "minLength": 1 },
+          "integrity": {
+            "type": "string",
+            "pattern": "^sha512-",
+            "description": "制品完整性哈希。哈希与签名的校验在域外完成（SEC-011）；DSH 本身不提供（C18）。"
+          },
+          "tier": {
+            "enum": ["platform", "scenario", "tenant"],
+            "description": "层级标记。合法性的判定在域外 Profile 生成时完成——不在域内。"
+          }
+        }
+      }
+    },
+
+    "removedRows": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "必须移除的插件行。C36：dsh-base 同时插入 tool-plugin-manager（工具行）与 plugin-manager（服务行，profile 下默认启用）。只禁工具行不足。",
+      "$comment": "SEC-020/SEC-021：必须包含 'tool-plugin-manager' 与 'plugin-manager'"
+    },
+
+    "hmr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "const": false,
+          "description": "必须关闭。dsh-base 的 hmr 行在 profile 下默认启用（'Profile configuration reloads by default'，C36），是运行期模块重载路径。"
+        }
+      }
+    },
+
+    "toolAllowlist": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "description": "域内可注册工具的白名单。由桥在 register() 入口拦截执行（D16）。语义：缺省或空数组 = 空集，不是全集。",
+      "$comment": "ENG-002：非清单内一律不注册 + 硬审计。ENG-003：MCP 运行期重同步同路受管。"
+    },
+
+    "skillRoots": {
+      "type": "array",
+      "description": "该域可加载的 Skill 根。ENG-063：域内 skills provider **必须只装配这些根**；GET /v1/skills 的目录是「域外 Catalog 服务 ∩ 域内实际可见集」，不得由域内自行列举。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scope", "root"],
+        "properties": {
+          "scope": {
+            "enum": ["platform", "tenant", "user"],
+            "description": "三级作用域。SEC-105：域内**不得**跨作用域读取——user 级不得对他人可见，tenant 级不得跨租户可见。"
+          },
+          "root": { "type": "string", "pattern": "^/", "description": "域内绝对路径。" },
+          "trust": {
+            "enum": ["trusted", "untrusted"],
+            "description": "SEC-106：Skill 正文是**内容注入通道**。untrusted 来源的正文必须过滤或包装为「仅数据、非指令」。默认 untrusted；必须与 §8.6 四通道共用同一信任级取值域。"
+          }
+        }
+      }
+    },
+
+    "sandboxMode": {
+      "enum": ["read-only", "workspace-write", "danger-full-access"],
+      "description": "部署默认取 read-only（本方案显式下发，不依赖 dsh-base 的 workspace-write 隐含默认）。"
+    },
+
+    "sandboxModeCeiling": {
+      "enum": ["read-only", "workspace-write", "danger-full-access"],
+      "description": "租户级升权上限。模型可对单次调用请求更宽模式（C38），超过上限即拒绝。"
+    },
+
+    "permissionPresets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "reachable"],
+      "properties": {
+        "enabled": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "允许的预设集合。C38：默认表含 danger-full-access = danger-full-access + never（两把锁同时打开）。"
+        },
+        "reachable": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "可达的预设。必须收敛为单一预设，使 danger-full-access 与 never 不可达。"
+        }
+      },
+      "$comment": "SEC-025：PermissionPresetService 是 Remote 服务且 set() 可对外暴露；不得向产品壳暴露该 Remote。"
+    },
+
+    "connectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serverName", "transport", "hosting", "trust"],
+        "properties": {
+          "serverName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,32}$",
+            "description": "同一注册作用域内唯一。工具名为 mcp__<serverName>__<rawName>，是 (serverName, rawName) 的纯函数（C10）。一个域内不得重名。"
+          },
+          "transport": { "enum": ["stdio", "streamable-http"] },
+          "hosting": {
+            "enum": ["domain", "data-plane", "exception"],
+            "description": "决定凭证归属。D11：默认任何凭证不得进入域内。domain = 无凭证；data-plane = 凭证由数据面持有；exception = 唯一登记例外。"
+          },
+          "url": { "type": "string", "format": "uri" },
+          "command": { "type": "string" },
+          "args": { "type": "array", "items": { "type": "string" } },
+          "cwd": { "type": "string" },
+          "headers": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "禁止长期凭证；仅允许空或域级短时令牌（TTL ≤ 5 分钟）。"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "C14：stdio 的 env 合并到已清洗环境之上。禁止长期凭证。"
+          },
+          "credentialRef": { "type": "string" },
+          "credentialException": {
+            "type": "boolean",
+            "description": "仅 hosting=exception 时可为 true。须安全评审并进入合规清单（SEC-055）；按域设硬条数上限，超限即拒。"
+          },
+          "trust": {
+            "enum": ["trusted", "untrusted"],
+            "description": "默认 untrusted（未知即不可信）。例外自动降级为 untrusted。"
+          },
+          "required": {
+            "type": "boolean",
+            "description": "由 Session Router 就绪探针判定——不由 failOnStartupError 表达（C15：MCP 行属 optional，不中止 harness）。"
+          },
+          "requireApproval": { "type": "array", "items": { "type": "string" } },
+          "reconnect": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "maxAttempts": { "type": "integer", "minimum": 1 } }
+          },
+          "toolCallTimeoutMs": { "type": "integer", "minimum": 1 }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "transport": { "const": "streamable-http" } }, "required": ["transport"] },
+            "then": { "required": ["url"] }
+          },
+          {
+            "if": { "properties": { "transport": { "const": "stdio" } }, "required": ["transport"] },
+            "then": { "required": ["command"] }
+          },
+          {
+            "if": { "properties": { "credentialException": { "const": true } }, "required": ["credentialException"] },
+            "then": { "properties": { "hosting": { "const": "exception" } }, "required": ["hosting"] }
+          }
+        ]
+      }
+    },
+
+    "deadlines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalSeconds", "modelStreamSeconds", "turnSeconds"],
+      "properties": {
+        "approvalSeconds": {
+          "type": "integer", "minimum": 60, "maximum": 120, "default": 90,
+          "description": "T_a。内核无审批超时（C40），必须自持。"
+        },
+        "modelStreamSeconds": {
+          "type": "integer", "minimum": 1,
+          "description": "T_m。单次模型流含重试总预算。超时 fail-closed。"
+        },
+        "turnSeconds": {
+          "type": "integer", "minimum": 1, "maximum": 900,
+          "description": "T_turn。超时走 turn/cancel 并记录原因。"
+        }
+      }
+    },
+
+    "modelDegradation": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "每类会话的模型降级策略。EVO-019：Profile **必须**为每类会话显式给出降级目标，**缺字段即拒绝产出 Profile**。键 = 会话类型标识。",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target"],
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "description": "降级目标：模型 id，或字面量 'fail-closed'（不降级，直接中断本轮）。"
+          },
+          "noDegrade": {
+            "type": "boolean",
+            "description": "true = 该会话类型禁止降级。"
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1,
+            "description": "noDegrade=true 时**必填**的理由码（EVO-019 验收判据）。"
+          }
+        }
+      },
+      "$comment": "适用范围**仅限** resolve-model 这一硬端点仍可用且能返回替代模型的情形。模型网关**整体不可用**不适用降级，按 SPEC-02 的 L3 处置（EVO-019 条款原文）。"
+    },
+
+    "buffers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audit", "billing"],
+      "properties": {
+        "audit": { "$ref": "#/$defs/bufferConfig" },
+        "billing": { "$ref": "#/$defs/bufferConfig" }
+      },
+      "$comment": "REL-052：计费与审计必须各自独立判定级别（独立水位、独立告警、独立丢弃计数、独立 L1b 判定）。"
+    },
+
+    "sessionProjectionCache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["writeEveryEvents", "writeIntervalMs"],
+      "description": "投影缓存参数。REL-032：`dsh-session-projection-cache` 为**必挂组件**，两个参数为 Profile **必填**。",
+      "properties": {
+        "writeEveryEvents": {
+          "type": "integer", "minimum": 1,
+          "description": "每累计多少个事件写一次缓存。取值〔待压测回填〕。"
+        },
+        "writeIntervalMs": {
+          "type": "integer", "minimum": 1,
+          "description": "缓存写入的最大时间间隔（毫秒）。取值〔待压测回填〕。"
+        }
+      },
+      "$comment": "该包自述为 'fold shortcut, never an authority'，**可能 stale**。因此：缓存行必须随域复制，且**复制水位与日志复制水位同一口径**（REL-032 判据）——出现两套水位口径即失败。缓存**不得**作为权威真源；真源始终是「日志 + 上传确认水位」。"
+    },
+
+    "quota": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokensPerDay", "toolCallsPerTurn"],
+      "properties": {
+        "tokensPerDay": { "type": "integer", "minimum": 0 },
+        "toolCallsPerTurn": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "credentialRef": { "type": "string" },
+
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "tokenTtlSeconds"],
+      "properties": {
+        "endpoint": { "type": "string", "format": "uri" },
+        "tokenTtlSeconds": {
+          "type": "integer", "minimum": 1, "maximum": 300,
+          "description": "域→域外会话租约 TTL，上限 300 秒。绑 (tenantId, isolationGroupId)；域外必须校验请求租户 == 令牌租户。"
+        }
+      }
+    },
+
+    "requiredPlugins": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "存在性断言，不是挂载指令。dsh-tool-call-timeout-policy 与 dsh-session-checkpoint-policy 已在 dsh-base 默认挂载；真正缺失的是 dsh-invariants（C25）。"
+    },
+
+    "domainEvidence": {
+      "type": "object",
+      "description": "域就绪所需的域外事实（§4.1.2）。由平台自产并留存，域内上报只作交叉核验。",
+      "additionalProperties": false,
+      "properties": {
+        "imageDigest": { "type": "string" },
+        "mountDigest": { "type": "string" },
+        "runtimeConfigDigest": { "type": "string" },
+        "profileGenerationDigest": { "type": "string" }
+      }
+    }
+  },
+
+  "$defs": {
+    "bufferConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retainHours"],
+      "properties": {
+        "retainHours": {
+          "type": "integer", "minimum": 1,
+          "description": "按时间定容量（不是字节数）。REL-053：软依赖不得阻断执行——超限走有界丢弃 + reconciled:false 墓碑 + 硬告警。"
+        }
+      }
+    }
+  },
+
+  "x-ov-semanticChecks": {
+    "description": "JSON Schema 无法表达的跨字段约束。必须由 packages/control-plane/src/profile/validate.ts 的表驱动校验器实现（ENG-025/ENG-045）。",
+    "checks": [
+      {
+        "id": "PC-001",
+        "rule": "deadlines.approvalSeconds < deadlines.turnSeconds",
+        "requirement": "REL-102",
+        "reason": "JSON Schema 不能比较两个属性的数值大小"
+      },
+      {
+        "id": "PC-002",
+        "rule": "deadlines.modelStreamSeconds < deadlines.turnSeconds",
+        "requirement": "REL-102",
+        "reason": "同上"
+      },
+      {
+        "id": "PC-003",
+        "rule": "sandboxMode <= sandboxModeCeiling（序：read-only < workspace-write < danger-full-access）",
+        "requirement": "SEC-023",
+        "reason": "枚举序关系不是 Schema 能力"
+      },
+      {
+        "id": "PC-004",
+        "rule": "permissionPresets.reachable 恰含一个元素，且该元素 != 'danger-full-access'",
+        "requirement": "SEC-025、C38",
+        "reason": "集合语义约束"
+      },
+      {
+        "id": "PC-005",
+        "rule": "removedRows 同时包含 'tool-plugin-manager' 与 'plugin-manager'；hmr.enabled === false",
+        "requirement": "SEC-020、SEC-021、C36",
+        "reason": "required 只能保证存在，不能保证内容 —— 用 contains 表达"
+      },
+      {
+        "id": "PC-006",
+        "rule": "connectors[].serverName 在单个 Profile 内唯一",
+        "requirement": "C10",
+        "reason": "uniqueItems 不适用于对象数组的子字段；重名会导致 DSH 加载失败"
+      },
+      {
+        "id": "PC-007",
+        "rule": "profileGenerationDigest 等四项 domainEvidence 在域创建时必须产出并留存，非空",
+        "requirement": "GATE-002 条件 4、§4.1.2",
+        "reason": "证据存在性由平台侧断言，非 Profile 内容"
+      },
+      {
+        "id": "PC-008",
+        "rule": "toolAllowlist 中的每个工具名必须可解析到 pluginSet 内的某个工具插件，或某个已下发 connector 的 mcp__<serverName>__<rawName>",
+        "requirement": "ENG-002、§5.3.1 第 1 项",
+        "reason": "跨 pluginSet 与 connectors 的引用完整性"
+      },
+      {
+        "id": "PC-009",
+        "rule": "connectors[].hosting === 'exception' 的条数不得超过平台配置的按域硬上限",
+        "requirement": "SEC-055",
+        "reason": "上限值为平台配置，非 Schema 常量"
+      },
+      {
+        "id": "PC-010",
+        "rule": "modelDegradation 的每个条目：noDegrade === true 时 reasonCode 必填且非空",
+        "requirement": "EVO-019",
+        "reason": "条件必填（cross-field if/then）虽可用 allOf 表达，但理由码的合法集合由平台维护，需查表"
+      },
+      {
+        "id": "PC-011",
+        "rule": "域启动时断言 residencyRegion 与本域实际所在区域一致，不一致即拒绝 ready",
+        "requirement": "EVO-026",
+        "reason": "「本域实际区域」是运行时事实，不在 Profile 内容内"
+      },
+      {
+        "id": "PC-012",
+        "rule": "modelDegradation 的键集合必须覆盖该租户所有已启用场景涉及的全部会话类型（不得只写一个条目充数）",
+        "requirement": "EVO-019",
+        "reason": "需要与 Scenario Catalog 求并集，是跨资源引用完整性"
+      }
+    ]
+  },
+
+  "x-ov-rejected": {
+    "description": "曾经出现、现已废止的字段。additionalProperties:false 会拒绝它们；此处登记以便给出可读错误。",
+    "fields": [
+      {
+        "name": "policies.writeScopes",
+        "reason": "C50：writeScopes 不是内核概念，只存在于实验包 dsh-experimental-agent-team，且其语义是'视图只对重叠发警告，绝不阻止 claim 或授予写权限'。沙箱只有一个可写根（C27）。要限制写入必须拆隔离组或用独立域。"
+      },
+      {
+        "name": "connectors[].failOnStartupError",
+        "reason": "C15：只让插件激活失败，MCP 行属 optional，不中止 harness。'必需 connector'改由 Session Router 就绪探针判定。"
+      },
+      {
+        "name": "policies.sandboxMode",
+        "reason": "已提升为顶层 sandboxMode，与 sandboxModeCeiling 成对。"
+      }
+    ]
+  }
+}
