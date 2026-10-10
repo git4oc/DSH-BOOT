@@ -9,3 +9,9 @@ deps-report.json
 id-format-report.json
 .DS_Store
 Thumbs.db
+
+# 内部设计与评审文档（不开源）
+DSH企业级技术方案设计.md
+DSH架构多角色评审汇总.md
+archive/
+

@@ -67,3 +67,14 @@ node tools/lint-specs.mjs && node tools/check-gates.mjs && node tools/validate-c
 | **1.10** | **阶段 P3–P4（GATE-005/006）**：身份/RBAC/配额/公平调度/计费（`packages/control-plane/src/identity-quota/`：JWT+RBAC、workspace 授权时序、超额租户按比例限速、turnId 幂等去重）；四目录（`registry/`：Plugin/Connector/Skill/Scenario，层级合法性域外判定、例外 connector 按域上限）；Session Router/历史查询/保留删除 DSR/取证（`session-ops/`：自建索引、WORM 哈希链、DSR 全清单八类）；SDK 生成器（`tools/gen-sdk.mjs`，51 操作，`check:sdk-sync`）+ SSO/SCIM（停用 5 min 失效）+ 降级阶梯（跃迁表/滞回/下发通道）；升级流水线五道 gate（`tools/run-upgrade-pipeline.mjs` + P-1/P-2/P-3 复核，evidence/UPGRADE-P5）；L2 层（L1 禁止事项解除）+ 实验能力适配层隔离。诚实 fail 维持：GATE-002 C9（Windows 容器 ACL 实测）、GATE-003 演练 3/6（DRL-03/04/06 blocked）；PP-01…PP-35 实测回填 blocked（缺目标机型压测环境，D13） |
 | **1.9** | **阶段 P2：多租户隔离 + 可报价**：`packages/control-plane/src/pool/`（隔离域归属：一 `(tenantId, isolationGroupId)` 一域、跨租户永不共享；workspace 独占租约 fencing epoch 可转移；漂移两类事件拆分：connector 生命周期→不摘域 + 自动重载，未授权插件/工具→摘域 + 单独审批；网络策略默认拒绝入站 + 出站白名单；域池三态热/温/零：冻结 = flush + 排空缓冲 + suspend 标记、快照必含投影缓存与未上传缓冲；冷启动排队 → **等待页而非错误码**）；容量模型 `N_node = min(N_mem, N_blast)`（示例推导 102/50 → **50**，输入/来源/敏感性逐项标注，PP 参数〔待压测回填〕，`REL-061`）；成本模型 4 画像 × 3 档矩阵 12 格全数字（**假设值**口径，`PRD-044` 判据③，token 为主成本项）。契约 6/6（`contract:pool`） |
 | **1.8** | **阶段 P1：SessionPersistence L1 + 恢复/台账/分缓冲/对账/迁移**：`packages/domain-bridge/src/persistence/`（`export default class` L1 提供方 + 8 错误类全集 + 恢复 closer 合成 + 副作用台账 + 分缓冲与墓碑 + 对账 + 迁移状态机）；语义级契约 14/14（`contract:persistence-l1`）；演练 runner `tools/run-drills.mjs`：DRL-01/02/05 pass，**DRL-03/04/06 blocked**（缺核内连接器控制器/降级阶梯/多节点拓扑，D-13）⇒ `GATE-003` 条件 5 = **fail**（3/6，不伪造通过） |
+
+## 9. 实现与规划的一致性（对照）
+
+| 规划 | 实现 | 判定 |
+|---|---|---|
+| 内层：注册入口唯一 + 单一预设 + 升权上限 | P0-A2 注册桥（全仓 `ctx.tools.register` 唯一命中点）+ P3-2 四目录域外判定 | ✅ 一致 |
+| 中层：审批应答者 + 参数通道 + 三层截止时间 | P0-A3（契约 11/11）+ Profile `deadlines` 三层必填校验 | ✅ 一致 |
+| 中层：Windows ACL 实测，不通过则移出多租户隔离 | P0-A6 实测 fail → Windows 禁入多租户隔离（规划的分支被如实执行） | ✅ 一致 |
+| 外层：自建租户/资源隔离 | P1 持久化 + P2 隔离域池/租约/成本 + P3 身份/配额/计费/路由/DSR + P3-4 SDK/SSO/降级阶梯——**控制面逻辑全部实现，契约测试钉死**（域归属/令牌绑定/租约/配额/计费/路由/删除证明） | ✅ 一致 |
+| 演进：升级有门禁 | P4 升级流水线五道 gate + P-1/P-2/P-3 前提复核 | ✅ 一致 |
+| **未完成（基础设施缺口，非代码缺口）** | GATE-002 C9 Windows 容器实测、演练 3/6、PP-01…PP-35 压测回填 | 🔶 如实 blocked |
