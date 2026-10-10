@@ -65,7 +65,7 @@ Seus usuários
 │ Sistema de negócio (seu)                     │
 │ Sua UI (Web/App/CLI) + seus fluxos de negócio│
 │ + cenários, ferramentas, conectores e skills │
-└──────────────────┬──────────────────────────┘
+└──────────────────┬───────────────────────────┘
                    │ Chama a API da plataforma para iniciar a sessão/turno
                    ▼
 ┌──────────────────────────────────────────────┐
@@ -73,7 +73,7 @@ Seus usuários
 │ Auth · quota e billing · aprovações ·        │
 │ auditoria forense · exclusão DSR ·           │
 │ degradação · gates de upgrade                │
-└──────────────────┬──────────────────────────┘
+└──────────────────┬───────────────────────────┘
                    │ Despacha o turno para um domínio de isolamento
                    ▼
 ┌──────────────────────────────────────────────┐
