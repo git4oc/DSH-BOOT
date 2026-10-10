@@ -1,5 +1,7 @@
 # DSH-BOOT
 
+[English](README.en.md) | 简体中文 | [日本語](README.ja.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Русский](README.ru.md) | [Português](README.pt.md)
+
 > **在 DSH 内核之上构建企业级 AI Agent 业务系统的平台。**
 > 你只写业务逻辑。多租户隔离、安全审计、审批、配额计费、会话持久化、演进兼容——这些由平台实现，契约测试钉死，不需要你自己写。
 
