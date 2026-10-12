@@ -32,6 +32,51 @@ export const QUOTA_DIMENSIONS: readonly QuotaDimension[] = [
 /** 软配额维度集合（软依赖不可用 ⇒ 不阻断执行；拒绝原因码中不含软依赖）。 */
 export const SOFT_DIMENSIONS: readonly string[] = QUOTA_DIMENSIONS.filter((d) => d.level === "soft").map((d) => d.dimension);
 
+// ── 硬配额（设计 §5.2 配额维度 + `PRD-040` workspace 份额硬约束/同租户不连坐） ──
+export type HardQuotaDimension = "domainSlots" | "cpu" | "memory" | "modelConcurrency";
+
+export interface HardQuotaUsage {
+  readonly dimension: HardQuotaDimension;
+  /** 当前用量（达到上限即拒绝新 turn 的准入语义）。 */
+  readonly usage: number;
+  readonly limit: number;
+}
+
+export interface WorkspaceShareUsage {
+  readonly workspaceId: string;
+  /** 该 workspace 当前并发/份额用量。 */
+  readonly current: number;
+  readonly shareLimit: number;
+}
+
+/**
+ * 硬配额检查（设计 §5.2：domainSlots/cpu/memory/modelConcurrency = **硬**）：
+ * 超限拒绝并发射 `QUOTA_HARD_EXCEEDED`；workspace 份额超限只拒绝**该 workspace**
+ * 并发射 `QUOTA_WORKSPACE_SHARE_EXCEEDED`——同租户其他 workspace 不受影响（`PRD-040` 同租户不连坐）。
+ */
+export class HardQuotaService {
+  admitHard(usage: HardQuotaUsage): { allowed: boolean; reason?: string } {
+    if (!Number.isFinite(usage.usage) || !Number.isFinite(usage.limit) || usage.usage < 0 || usage.limit < 0) {
+      throw new Error("QUOTA_INPUT_INVALID: 硬配额用量与上限必须为非负有限数值");
+    }
+    if (usage.usage >= usage.limit) {
+      return { allowed: false, reason: "QUOTA_HARD_EXCEEDED" };
+    }
+    return { allowed: true };
+  }
+
+  /** workspace 份额硬检查：某 workspace 超限只拒绝该 workspace 的新轮次（`PRD-040`）。 */
+  admitWorkspace(usage: WorkspaceShareUsage): { allowed: boolean; reason?: string } {
+    if (!Number.isFinite(usage.current) || !Number.isFinite(usage.shareLimit) || usage.current < 0 || usage.shareLimit < 0) {
+      throw new Error("QUOTA_INPUT_INVALID: workspace 份额用量与上限必须为非负有限数值");
+    }
+    if (usage.current >= usage.shareLimit) {
+      return { allowed: false, reason: "QUOTA_WORKSPACE_SHARE_EXCEEDED" };
+    }
+    return { allowed: true };
+  }
+}
+
 // ── 公平调度（§5.2.1） ───────────────────────────────────────────────────────
 export interface FairSchedulingDecision {
   readonly tenantId: string;
@@ -69,11 +114,13 @@ export class FairScheduler {
   }
 }
 
-// ── 计费与归因（§5.2.1 末段；§7.6 真源） ──────────────────────────────────────
+// ── 计费与归因（§5.2.1 末段；§7.6 真源；`PRD-036` dim 四维；`PRD-041` 幂等去重） ──
 export interface UsageRecord {
   readonly tenantId: string;
   readonly turnId: string;
   readonly workspaceId: string;
+  readonly userId: string;
+  readonly scenario: string;
   readonly connector: string;
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -112,19 +159,24 @@ export class BillingLedger {
   }
 
   /**
-   * 对客用量端点（`PRD-042`）：`GET /v1/usage?dim=workspace|user|scenario|connector`（T+1）、
-   * `GET /v1/usage/export`。含 `reconciled` 标记与**分方向差异**（少计/多计分列）。
+   * 对客用量端点（`PRD-036`：`GET /v1/usage?dim=workspace|user|scenario|connector`（T+1）、
+   * `GET /v1/usage/export`）。含 `reconciled` 标记与**分方向差异**（少计/多计分列，`PRD-041`）。
    */
   usage(dim: "workspace" | "user" | "scenario" | "connector", keys: readonly string[]): readonly UsageAggregate[] {
     const result: UsageAggregate[] = [];
     for (const key of keys) {
-      const matched = this.records.filter((r) => (dim === "workspace" ? r.workspaceId : dim === "connector" ? r.connector : r.tenantId) === key);
+      const matched = this.records.filter((r) => {
+        if (dim === "workspace") return r.workspaceId === key;
+        if (dim === "user") return r.userId === key;
+        if (dim === "scenario") return r.scenario === key;
+        return r.connector === key;
+      });
       if (matched.length === 0) continue;
       const inputTokens = matched.reduce((sum, r) => sum + r.inputTokens, 0);
       const outputTokens = matched.reduce((sum, r) => sum + r.outputTokens, 0);
       const cacheHitTokens = matched.reduce((sum, r) => sum + r.cacheHitTokens, 0);
       const tenantId = matched[0].tenantId;
-      // 分方向差异（`REL-055`）：墓碑丢弃段 = 少计（under）；
+      // 分方向差异（`REL-056`/`PRD-041`）：墓碑丢弃段 = 少计（under）；
       // 派生视图多算由对账裁定（reconcile 报表分列，见 reconciliation.ts）。
       const underCounted = matched.filter((r) => this.tombstonedTurns.has(`${r.tenantId}:${r.turnId}`)).length;
       result.push({ tenantId, dim, key, inputTokens, outputTokens, cacheHitTokens, reconciled: underCounted === 0, underCounted, overCounted: 0 });

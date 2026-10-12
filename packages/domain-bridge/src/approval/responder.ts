@@ -95,7 +95,34 @@ export function registerApprovalResponder(
       options.domainContext.turnId,
       callId,
     )?.payload;
-    const decisionPromise = options.decide({ callId, toolName: event.toolName, payload: payload! });
+    if (payload === undefined) {
+      // 上报已成功但回补记录缺失：fail-closed（`ENG-009` 判据①，`SEC-DOC-06` §6.2 判据 1）。
+      options.channel.markDecided(
+        options.domainContext.sessionId,
+        options.domainContext.turnId,
+        callId,
+        "unavailable",
+        "responder",
+        "backfill-missing",
+      );
+      return "unavailable";
+    }
+    let decisionPromise: Promise<ApprovalDecision>;
+    try {
+      decisionPromise = options.decide({ callId, toolName: event.toolName, payload });
+    } catch (error) {
+      // decide 同步抛出：fail-closed ⇒ unavailable（`CTR-001` §4.3 词表，不盲批）。
+      options.channel.markDecided(
+        options.domainContext.sessionId,
+        options.domainContext.turnId,
+        callId,
+        "unavailable",
+        "responder",
+        "decide-error",
+      );
+      void error;
+      return "unavailable";
+    }
     const timeoutMs = approvalSeconds * 1000;
     let clearT_a: () => void = () => undefined;
     const timeoutPromise = new Promise<"timeout">((resolve) => {
@@ -103,7 +130,21 @@ export function registerApprovalResponder(
       const timer = setTimeout(() => resolve("timeout"), timeoutMs);
       clearT_a = () => clearTimeout(timer);
     });
-    const outcome = await Promise.race([decisionPromise.then((d) => d.outcome), timeoutPromise]);
+    const outcome = await Promise.race([
+      decisionPromise.then((d) => d.outcome, () => {
+        // decide 拒绝（域外决策通道失败）：fail-closed ⇒ unavailable（`ENG-009` 判据①）。
+        options.channel.markDecided(
+          options.domainContext.sessionId,
+          options.domainContext.turnId,
+          callId,
+          "unavailable",
+          "responder",
+          "decide-error",
+        );
+        return "unavailable" as const;
+      }),
+      timeoutPromise,
+    ]);
     clearT_a(); // 决策先到：释放 T_a 定时器（不阻塞进程退出）
     if (outcome === "allowed-once" || outcome === "rejected") {
       options.channel.markDecided(

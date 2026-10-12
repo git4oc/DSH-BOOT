@@ -22,6 +22,7 @@ import {
   ApprovalParameterChannel,
   argsDeliverable,
   buildTenFieldPayload,
+  canonicalSerialize,
   registerApprovalResponder,
 } from "../../../../packages/domain-bridge/src/approval/index.ts";
 import { registerTool } from "../../../../packages/domain-bridge/src/register.ts";
@@ -348,6 +349,58 @@ async function main() {
       "NO-ALLOW-ALWAYS-SOURCE-CHECK",
       offenders.length === 0,
       `全仓审批面无 allow-always/allowAlways 命中（无跨 callId 授权复用、无规则存储）=${offenders.length === 0}（ENG-010 判据①）`,
+    );
+  }
+
+  // ── 12. decide 拒绝/同步抛出 ⇒ unavailable（fail-closed，不盲批；CTR-001 §4.3 词表）──
+  {
+    const channel = harness.channel;
+    const { ctx, responders } = kernelWithWaterfall();
+    registerApprovalResponder(ctx, {
+      channel,
+      domainContext: { ...DOMAIN, sessionId: "s-decide-err", turnId: "t-decide-err" },
+      resolveArgs: () => ({ path: "a.txt" }),
+      decide: async () => {
+        throw new Error("decide channel down"); // 域外决策通道失败
+      },
+      approvalSeconds: 30,
+    });
+    const outcome = await responders[0]({ agent: "main", toolName: "write_file", callId: "call-decide-err" });
+    const backfillRecord = channel.getBackfill("s-decide-err", "t-decide-err", "call-decide-err");
+    const failClosed = outcome === "unavailable" && backfillRecord?.approvalStatus === "unavailable" && backfillRecord?.outcomeReasonCode === "decide-error";
+    record(
+      "DECIDE-REJECT-UNAVAILABLE",
+      failClosed,
+      `decide 拒绝 ⇒ outcome=unavailable=${outcome === "unavailable"}，终态落库 unavailable/decide-error=${backfillRecord?.approvalStatus === "unavailable"}（ENG-009 判据① fail-closed：不得盲批、不得向内核抛裸拒绝）`,
+    );
+  }
+
+  // ── 13. JCS 序列化：DAG 共享引用（非循环）不误报 F-1（SEC-058 规范序列化）────
+  {
+    const shared = { token: "v" };
+    const dagArgs = { p: shared, q: shared, list: [shared, shared] };
+    let dagOk = false;
+    try {
+      canonicalSerialize(dagArgs);
+      dagOk = true;
+    } catch {
+      dagOk = false;
+    }
+    // 循环引用仍然拒绝（F-1 语义不变）
+    const circular = {};
+    circular.self = circular;
+    let circularRejected = false;
+    try {
+      canonicalSerialize(circular);
+    } catch (error) {
+      circularRejected = error instanceof TypeError && String(error.message).includes("circular reference");
+    }
+    // DAG 参数在 payload 构建中同样可用（登记期不误判 F-1）
+    const payload = buildTenFieldPayload(DOMAIN, "call-dag", "tool_a", dagArgs);
+    record(
+      "JCS-DAG-SERIALIZABLE",
+      dagOk && circularRejected && payload.redacted === true,
+      `DAG 共享引用可序列化=${dagOk}，循环引用仍拒绝=${circularRejected}，DAG 载荷 redacted=true（命中 token 键级规则）=${payload.redacted === true}（SEC-058/F-1：循环 ≠ 共享）`,
     );
   }
 

@@ -17,7 +17,7 @@ import { BridgeTelemetry } from "../packages/domain-bridge/src/tools.ts";
 import { evaluateReadiness } from "../packages/control-plane/src/ready/evaluate.ts";
 import { createDomainEvidence, verifyChain } from "../packages/control-plane/src/ready/evidence.ts";
 import { CREDENTIAL_PROVIDER_DENYLIST, validateDeadlines } from "../packages/control-plane/src/profile/validate.ts";
-import { issueDomainToken, verifyDomainToken } from "../packages/control-plane/src/token/domain-token.ts";
+import { issueDomainToken, verifyDomainToken, getTokenAudits } from "../packages/control-plane/src/token/domain-token.ts";
 import { createGatewayStub, listenStub } from "../packages/reverse-gateway/src/stub/index.ts";
 import { computeDiff } from "./snapshot/diff.mjs";
 import { probeWindowsAcl } from "./windows-acl-probe.mjs";
@@ -195,6 +195,7 @@ function check3() {
     { label: "RC-7", facts: passingFacts({ connectorProbes: [{ serverName: "dev", ok: false }] }), expectActive: true },
   ];
   const results = [];
+  const decisions = [];
   let allFail = true;
   for (const testCase of cases) {
     const decision = evaluateReadiness({
@@ -202,6 +203,7 @@ function check3() {
       facts: testCase.facts,
       crossCheck: { criticalRows: { ok: true } },
     });
+    decisions.push(decision);
     if (testCase.label === "RC-7") {
       results.push({ check: testCase.label, ready: decision.ready, active: decision.active });
       if (decision.active !== false) allFail = false;
@@ -210,14 +212,16 @@ function check3() {
       if (decision.ready !== false) allFail = false;
     }
   }
-  // 域外事实来源断言：七条的判定输入均为 out-of-domain。
-  const allOutOfDomain = true;
+  // 域外事实来源断言：七条的判定输入均为 out-of-domain——从 evaluateReadiness 逐条结果
+  // 派生（evaluate.ts ReadyCheckResult.source），不再硬编码（SEC-044/G-R1：门禁只接受域外事实）。
+  const allOutOfDomain = decisions.length === cases.length &&
+    decisions.every((decision) => decision.results.length > 0 && decision.results.every((r) => r.source === "out-of-domain"));
   artifacts.push(writeArtifact("C3", "ready-deny-RC1-7.json", { results, source: "out-of-domain" }));
   artifacts.push(writeArtifact("C3", "ready-evidence.json", { disabledInjectionReady: results[0].ready, note: "RC-1 disabled 关键行注入 ⇒ ready=false；七条判定输入均为域外事实" }));
   conditions.push({
     check: "C3",
     title: "域就绪判据 7 条全部可执行，且每条的证据来源都是域外事实；disabled 关键行 ⇒ 域拒绝 ready",
-    verdict: allFail ? "pass" : "fail",
+    verdict: allFail && allOutOfDomain ? "pass" : "fail",
     input: "七种失败态逐条注入（镜像清单/工具集观测/fiber/权限模式/挂载声明/探针）",
     observation: `RC-1…RC-6 失败 ⇒ ready=false；RC-7 失败 ⇒ active=false；disabled 注入 ⇒ ready=false；判定输入全部为域外事实=${allOutOfDomain}`,
     sourceAuthority: "域外事实（镜像摘要/挂载摘要/运行时配置/Profile 生成摘要）",
@@ -252,20 +256,22 @@ function check4() {
   writeFileSync(join(dir, "record.json"), JSON.stringify(r2, null, 2) + "\n", "utf8");
   artifacts.push({ path: `evidence/GATE-002/C4/domain-evidence/gate002-domain-2/record.json`, hash: sha256(JSON.stringify(r2)) });
   artifacts.push(writeArtifact("C4", "chain-verify.json", { chainOk, records: 2 }));
-  const digestsNonEmpty = evidenceNonEmpty();
+  const digestsOk = evidenceDigestsNonEmpty(r1) && evidenceDigestsNonEmpty(r2);
   conditions.push({
     check: "C4",
     title: "平台能产出并留存域就绪所需的域外证据，且每次域创建留证",
-    verdict: chainOk && digestsNonEmpty ? "pass" : "fail",
+    verdict: chainOk && digestsOk ? "pass" : "fail",
     input: "每次域创建调用 createDomainEvidence（四类摘要非空）× 2 + verifyChain",
-    observation: `四类摘要非空=${digestsNonEmpty}，每次域创建留证（2 条）=${chainOk}，哈希链校验通过=${chainOk}`,
+    observation: `四类摘要非空（逐条校验）=${digestsOk}，每次域创建留证（2 条）=${chainOk}，哈希链校验通过=${chainOk}`,
     sourceAuthority: "域外证据工件（镜像/挂载/运行时配置/Profile 生成摘要）",
     artifacts,
   });
 }
 
-function evidenceNonEmpty() {
-  return true;
+/** 四类域外摘要逐条校验非空（PC-007：摘要缺失即拒绝留空证；不再硬编码 true）。 */
+function evidenceDigestsNonEmpty(record) {
+  return [record.imageDigest, record.mountDigest, record.runtimeConfigDigest, record.profileGenerationDigest]
+    .every((digest) => typeof digest === "string" && digest.length > 0);
 }
 
 function check5() {
@@ -323,21 +329,21 @@ async function check6() {
   const crossTenant = verifyDomainToken(issued.token, "tenant-b", { secret: "gate002-c6" });
   const audits = verifyTokenAudits();
   artifacts.push(writeArtifact("C6", "llm-failclosed.json", { endpoints: observed, all400 }));
-  artifacts.push(writeArtifact("C6", "token-cross-tenant.json", { crossTenantRejected: crossTenant.ok === false, reason: crossTenant.reason ?? "", hardAudit: audits }));
+  artifacts.push(writeArtifact("C6", "token-cross-tenant.json", { crossTenantRejected: crossTenant.ok === false, reason: crossTenant.reason ?? "", hardAuditCount: audits }));
   conditions.push({
     check: "C6",
     title: "四个 LLM 端点 fail-closed；域令牌绑定 (tenantId, isolationGroupId) 且域外校验通过",
-    verdict: all400 && crossTenant.ok === false ? "pass" : "fail",
+    verdict: all400 && crossTenant.ok === false && audits > 0 ? "pass" : "fail",
     input: "缺归因头 POST 四个 LLM 端点；A 域令牌以 B 租户身份校验",
-    observation: `四端点全部 400=${all400}（${JSON.stringify(observed)}）；跨租户冒用被拒且产生硬审计=${crossTenant.ok === false && audits > 0}`,
+    observation: `四端点全部 400=${all400}（${JSON.stringify(observed)}）；跨租户冒用被拒且产生硬审计（token.cross_tenant_rejected 入账 ${audits} 条）=${crossTenant.ok === false && audits > 0}`,
     sourceAuthority: "域外网关配置与校验日志（反向网关桩域外判定）",
     artifacts,
   });
 }
 
 function verifyTokenAudits() {
-  // 硬审计计数由 domain-token 模块内审计台账提供（跨租户拒绝已入账）。
-  return "token.cross_tenant_rejected 已入账（SEC-008）";
+  // 硬审计计数取自 domain-token 模块内审计台账（SEC-008：不一致即拒绝并硬审计）。
+  return getTokenAudits().filter((audit) => audit.event === "token.cross_tenant_rejected").length;
 }
 
 function check7() {

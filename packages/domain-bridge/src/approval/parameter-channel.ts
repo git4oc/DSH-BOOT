@@ -78,6 +78,8 @@ function normalizeKey(key: string): string {
 function sensitiveKey(key: string, rules: RedactionRules): boolean {
   const normalized = normalizeKey(key);
   if (rules.exactKeys.some((k) => normalizeKey(k) === normalized)) return true;
+  // `SUFFIX_SET` 语义按 `SEC-DOC-06` §2.1 原文为「**包含**任一 SUFFIX_SET 成员」（子串匹配，
+  // 非 endsWith）——实现与规格逐字一致；偏保守方向（多脱敏不漏脱敏）。
   return rules.suffixKeys.some((suffix) => normalized.includes(normalizeKey(suffix)));
 }
 
@@ -183,7 +185,9 @@ export function canonicalSerialize(value: unknown): string {
     if (Array.isArray(node)) {
       if (seen.has(node)) throw new TypeError("circular reference is not serializable (F-1)");
       seen.add(node);
-      return node.map(walk);
+      const mapped = node.map(walk);
+      seen.delete(node); // DAG 共享引用（非循环）不误报：walk 完成后回删
+      return mapped;
     }
     if (seen.has(node)) throw new TypeError("circular reference is not serializable (F-1)");
     seen.add(node);
@@ -191,6 +195,7 @@ export function canonicalSerialize(value: unknown): string {
     for (const key of Object.keys(node as Record<string, unknown>).sort()) {
       out[key] = walk((node as Record<string, unknown>)[key]);
     }
+    seen.delete(node); // DAG 共享引用（非循环）不误报：walk 完成后回删
     return out;
   };
   return JSON.stringify(walk(value));

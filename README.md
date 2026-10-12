@@ -166,11 +166,12 @@ registry.register({
 业务用户**不写任何隔离、审计、配额、持久化代码**——定义四类资产，这些由平台提供。
 
 ```bash
-# 11 个契约套件——平台承诺的每条语义都有测试钉死
+# 12 个契约套件——平台承诺的每条语义都有测试钉死
 pnpm contract:llm && pnpm contract:tools && pnpm contract:approval
-pnpm contract:ready && pnpm contract:persistence-l1 && pnpm contract:pool
-pnpm contract:identity-quota && pnpm contract:registry
+pnpm contract:ready && pnpm contract:persistence-l1 && pnpm contract:persistence-l2
+pnpm contract:pool && pnpm contract:identity-quota && pnpm contract:registry
 pnpm contract:session-ops && pnpm contract:lifecycle
+pnpm fixtures:selftest
 
 # 规格与文档校验
 node tools/lint-specs.mjs && node tools/check-gates.mjs
@@ -186,7 +187,7 @@ node tools/validate-contracts.mjs && node tools/lint-docs.mjs
 
 ## 当前状态与边界（诚实版）
 
-- ✅ 六个阶段门禁（GATE-001…006）全部可达，各有证据工件；11 个契约套件全绿。
+- ✅ 六个阶段门禁（GATE-001…006）全部可达，各有证据工件；12 个契约套件全绿。
 - ❌ **Windows 禁入多租户隔离**：容器内 ACL 实测未通过（GATE-002 条件 9，如实 fail）。
 - 🔶 **演练 3/6**：DRL-03/04/06 需要核内组件与多节点拓扑，如实 blocked。
 - 🔶 **压测参数未回填**：`PP-01…PP-35` 全部为"示例推导值 + 待压测回填"——不编造数字。

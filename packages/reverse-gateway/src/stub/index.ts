@@ -53,13 +53,25 @@ export interface GatewayStub {
   close(): Promise<void>;
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
+/** 请求体默认上限：1 MiB（本方案自定义——无界缓冲禁止，`CTR-001` §2.4 背压条款）。 */
+export const STUB_BODY_MAX_BYTES = 1024 * 1024;
+
+/** 请求体读取：带上限（超限 413 拒绝，不无界缓冲）；无 body 解析为空串。 */
+function readBody(req: IncomingMessage, maxBytes: number = STUB_BODY_MAX_BYTES): Promise<string> {
+  return new Promise((resolve, reject) => {
     let data = "";
+    let total = 0;
     req.on("data", (c: Buffer) => {
+      total += c.byteLength;
+      if (total > maxBytes) {
+        req.destroy(); // 停止接收：不再无界缓冲
+        reject(new Error(`BODY_TOO_LARGE: request body exceeds ${maxBytes} bytes`));
+        return;
+      }
       data += c.toString("utf8");
     });
     req.on("end", () => resolve(data));
+    req.on("error", (error) => reject(error));
   });
 }
 
@@ -89,8 +101,21 @@ export function createGatewayStub(options: StubOptions): GatewayStub {
       return;
     }
     if (pathname === "/__knobs" && req.method === "POST") {
-      const body = await readBody(req);
-      const parsed = JSON.parse(body || "{}") as FaultKnobs;
+      // 坏 JSON ⇒ 400（不抛未处理拒绝——Node ≥15 默认会因此崩溃进程）。
+      let body: string;
+      try {
+        body = await readBody(req);
+      } catch (error) {
+        sendJson(res, 413, { error: "BODY_TOO_LARGE", detail: String(error) });
+        return;
+      }
+      let parsed: FaultKnobs;
+      try {
+        parsed = JSON.parse(body || "{}") as FaultKnobs;
+      } catch {
+        sendJson(res, 400, { error: "BAD_JSON" });
+        return;
+      }
       knobs = { ...knobs, ...parsed };
       attest.applyKnobs(parsed); // attest 覆盖（forceVerdict / degradationLevel）同步给 attest 桩
       sendJson(res, 200, { knobs });
@@ -128,7 +153,14 @@ export function createGatewayStub(options: StubOptions): GatewayStub {
 
     let body: Record<string, unknown> = {};
     if (req.method === "POST" || req.method === "PUT") {
-      const raw = await readBody(req);
+      let raw: string;
+      try {
+        raw = await readBody(req);
+      } catch (error) {
+        // 请求体超限：413 拒绝（不无界缓冲，`CTR-001` §2.4 背压条款）。
+        sendJson(res, 413, { error: "BODY_TOO_LARGE", detail: String(error) });
+        return;
+      }
       try {
         body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
       } catch {
@@ -179,6 +211,14 @@ export function createGatewayStub(options: StubOptions): GatewayStub {
         }
         if (mode === "aborted") {
           writeFrame({ kind: "done", reason: "aborted" });
+          res.end();
+          return;
+        }
+        if (mode === "bad-frame") {
+          // 故障旋钮：合法 delta 后写一条**坏 JSON 帧**（网关输出损坏）——
+          // 客户端必须定性为 adapter-error，不得伪装成 aborted（CTR-001 §2.5）。
+          writeFrame({ kind: "delta", text: "ok" });
+          res.write('{"kind":"delta","tex');
           res.end();
           return;
         }
@@ -301,7 +341,14 @@ export function createGatewayStub(options: StubOptions): GatewayStub {
       if (GATEWAY_ROUTES.length !== 10) {
         problems.push(`route table must have exactly 10 entries, got ${GATEWAY_ROUTES.length}`);
       }
-      const base = `http://127.0.0.1:${this.port}`;
+      // 用**实际绑定端口**（`server.address().port`）：配置 port=0（临时端口）时
+      // 静态 port 字段为 0，fetch 端口 0 必失败——自检必须对 listen 后的实际端口执行。
+      const address = server.address();
+      const boundPort = typeof address === "object" && address !== null ? address.port : undefined;
+      if (!boundPort) {
+        return { verdict: "fail" as const, problems: ["selfCheck requires the server to be listening (server.address() has no port); call listenStub() first"] };
+      }
+      const base = `http://127.0.0.1:${boundPort}`;
 
       // 缺归因头 → 400（`ENG-008` 判据③）。
       const noAttribution = await fetch(`${base}/internal/kernel/llm/models`, { method: "POST" });

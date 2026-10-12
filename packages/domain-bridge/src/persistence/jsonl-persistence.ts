@@ -12,7 +12,7 @@
  * 无索引 / P-7 格式拒绝方向。
  */
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, openSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync, statSync, writeSync, closeSync } from "node:fs";
 import { join, basename, isAbsolute } from "node:path";
 import {
   CURRENT_FORMAT_VERSION,
@@ -84,7 +84,15 @@ export interface OpenOptions {
    * **不得依赖超时兜底**（普通 open 仍即刻拒绝）。
    */
   readonly takeoverStaleLease?: boolean;
+  /**
+   * 未决缓冲字节上限（**本方案自定义**——`CTR-001` §5.3 错误码全集无此条款，缺条款已登记；
+   * 内存保护用）：append 超限即 fail-closed 拒绝，须先 flush。
+   */
+  readonly maxPendingBytes?: number;
 }
+
+/** 未决缓冲默认上限：64 MiB（本方案自定义，登记值）。 */
+export const DEFAULT_MAX_PENDING_BYTES = 64 * 1024 * 1024;
 
 interface LockPayload {
   readonly epoch: number;
@@ -178,12 +186,16 @@ export default class JsonlSessionPersistence {
     assertCurrentFormatOnly(header.formatVersion ?? CURRENT_FORMAT_VERSION);
     this.assertSafeId(header.id);
     const logPath = this.logPath(header.id);
-    if (existsSync(logPath)) {
-      throw sessionAlreadyExistsError(header.id);
-    }
     mkdirSync(this.root, { recursive: true });
     const headerFrame = { v: CURRENT_FORMAT_VERSION, kind: "header", header: { ...header, formatVersion: CURRENT_FORMAT_VERSION } };
-    writeFileSync(logPath, `${JSON.stringify(headerFrame)}\n`, "utf8");
+    // 原子独占创建（P-3 同源约束：existsSync 检查与写入之间的并发窗口由 `wx` 关闭，
+    // 并发 create 同一 id 时后者必然 EEXIST → SessionAlreadyExistsError，不静默覆盖）。
+    try {
+      writeFileSync(logPath, `${JSON.stringify(headerFrame)}\n`, { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw sessionAlreadyExistsError(header.id);
+      throw error;
+    }
     // P-1：create 后未 flush ⇒ 其他进程 list 不可见（不写 manifest）。
     return this.openHandle(header.id, "write", opts ?? {}, headerFrame.header, 0);
   }
@@ -220,17 +232,36 @@ export default class JsonlSessionPersistence {
     let pending = "";
     let pendingCount = 0;
     let epoch = 0;
+    const maxPendingBytes = opts.maxPendingBytes ?? DEFAULT_MAX_PENDING_BYTES;
 
     if (access === "write") {
       // P-3 单写者：独占创建锁文件（无过期，`C23`）；不排队、不超时兜底。
+      // 读锁 + 解析：锁在 existsSync 与 readFileSync 之间被并发释放（ENOENT）⇒ 视为无锁，
+      // 走下方 `wx` 独占创建路径；锁文件损坏（崩溃残留半帧，无法解析）⇒ fail-closed 拒绝
+      //（修复窗口同 REL-082 人为处置：由运维显式移除损坏锁文件后重开）。
+      let existingLock: LockPayload | undefined;
+      let lockCorrupt = false;
       if (existsSync(lockPath)) {
+        try {
+          existingLock = JSON.parse(readFileSync(lockPath, "utf8")) as LockPayload;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            existingLock = undefined; // 锁被并发释放：走无锁创建
+          } else {
+            lockCorrupt = true;
+          }
+        }
+        if (lockCorrupt) {
+          throw sessionAlreadyOwnedError(id);
+        }
+      }
+      if (existingLock !== undefined) {
         // 人为处置入口（`REL-082`）：显式标志 + 心跳过期（持有者已死证据）才可接管。
-        const payload = JSON.parse(readFileSync(lockPath, "utf8")) as LockPayload;
-        const stale = Date.now() - payload.heartbeatAt > this.ownershipLease.expiryMs;
+        const stale = Date.now() - existingLock.heartbeatAt > this.ownershipLease.expiryMs;
         if (!(opts.takeoverStaleLease === true && stale)) {
           throw sessionAlreadyOwnedError(id);
         }
-        epoch = payload.epoch + 1; // fencing：epoch + 1（设计 §5.4.1 步骤 3）
+        epoch = existingLock.epoch + 1; // fencing：epoch + 1（设计 §5.4.1 步骤 3）
         writeFileSync(lockPath, JSON.stringify({ epoch, owner: `${process.pid}`, heartbeatAt: Date.now() } satisfies LockPayload), "utf8");
       } else {
         epoch = Date.now();
@@ -294,17 +325,34 @@ export default class JsonlSessionPersistence {
 
       async append(events: SessionEvent[]): Promise<void> {
         assertWriteOpen();
+        // 未决缓冲上限（本方案自定义，超出即 fail-closed 拒绝——spec 错误码全集无此类，
+        // 不自造 spec ID；上限为内存保护，契约依据见实现注释）。缺条款已登记。
+        // 原子性：先整体计算容量再提交，超量抛出**不产生部分缓冲**（不得半入队）。
+        let candidate = pending;
+        let candidateCount = pendingCount;
         for (const event of events) {
-          pending += `${JSON.stringify({ v: CURRENT_FORMAT_VERSION, ...event })}\n`;
-          pendingCount += 1;
+          candidate += `${JSON.stringify({ v: CURRENT_FORMAT_VERSION, ...event })}\n`;
+          candidateCount += 1;
+          if (candidate.length > maxPendingBytes) {
+            throw new Error(`SESSION_PENDING_OVERFLOW: pending buffer ${candidate.length} bytes exceeds maxPendingBytes ${maxPendingBytes}; flush before appending more`);
+          }
         }
+        pending = candidate;
+        pendingCount = candidateCount;
         // P-1：append 解析成功 ≠ 持久化；仅缓冲（freshness 由内存缓冲保证）。
       },
 
       async flush(): Promise<void> {
         assertWriteOpen();
         if (pending.length > 0) {
-          writeFileSync(logPath, physicalFrames() + pending, "utf8");
+          // O_APPEND 追加写：不再整读重写——重写非原子，进程在重写中途被杀会撕裂**中段**
+          //（不只是尾部），违反 P-2（read 只容忍撕裂尾）；O_APPEND 保证原子追加到末尾。
+          const fd = openSync(logPath, "a");
+          try {
+            writeSync(fd, pending);
+          } finally {
+            closeSync(fd);
+          }
           pending = "";
           pendingCount = 0;
         }
@@ -320,7 +368,13 @@ export default class JsonlSessionPersistence {
         // P-4：完成未决持久化 + 释放写所有权 + 不可取消。
         if (access === "write") {
           if (pending.length > 0) {
-            writeFileSync(logPath, physicalFrames() + pending, "utf8");
+            // O_APPEND 追加写（同 flush：不整读重写，避免中段撕裂）。
+            const fd = openSync(logPath, "a");
+            try {
+              writeSync(fd, pending);
+            } finally {
+              closeSync(fd);
+            }
             pending = "";
             pendingCount = 0;
           }

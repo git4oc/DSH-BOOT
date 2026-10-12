@@ -23,6 +23,7 @@ import {
   resolveSandboxPermissions,
 } from "../../../../packages/domain-bridge/src/register.ts";
 import { BridgeTelemetry } from "../../../../packages/domain-bridge/src/tools.ts";
+import { argsDeliverable } from "../../../../packages/domain-bridge/src/approval/parameter-channel.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..", "..", "..");
@@ -263,6 +264,39 @@ async function main() {
       "SOURCE-CHECK-NO-HOST-RESTRICT",
       restrict.count === 0,
       `宿主上下文 .tools.restrict( 命中 ${restrict.count} 处（须为 0）=${restrict.count === 0}（ENG-004 判据④）`,
+    );
+  }
+
+  // ── 11. 组合面审批注册准入（`SEC-062` / `ENG-012` 判据② / `SEC-DOC-06` §6.1）──
+  {
+    const kernel = createMiniKernel();
+    const telemetry = new BridgeTelemetry();
+    // 组合面 installToolBridge 转发 approvalAdmission（argsDeliverable 为登记期准入判定）：
+    // 无 callId（F-3）⇒ 参数无法送达 ⇒ 不予注册且不得进入 requireApproval
+    const handle = installToolBridge({ tools: kernel.global }, convergedProfile(["a"]), telemetry, {
+      approvalAdmission: (definition) => argsDeliverable(definition.name, definition.args, definition.callId).reason,
+    });
+    const noCallIdDisposer = handle.registerTool({ name: "mcp__no__call_id", args: { k: 1 } });
+    const refused = !kernel.visibleTools().includes("mcp__no__call_id");
+    const deliverable = handle.registerTool({ name: "a", callId: "call-1", args: { k: 1 }, run: () => "a" });
+    const admitted = kernel.visibleTools().includes("a");
+    let disposerTransparent = true;
+    try {
+      deliverable();
+    } catch {
+      disposerTransparent = false;
+    }
+    const audit = telemetry.getAuditRecords().filter((r) => r.reason?.startsWith("args-undeliverable"));
+    let noCallIdSafe = true;
+    try {
+      noCallIdDisposer();
+    } catch {
+      noCallIdSafe = false;
+    }
+    record(
+      "COMPOSED-APPROVAL-ADMISSION",
+      refused && audit.length === 1 && admitted && disposerTransparent && noCallIdSafe,
+      `参数无法送达组合面拒绝注册=${refused}（硬审计 ${audit.length} 条），可送达工具放行且 disposer 原样透传=${admitted && disposerTransparent}（SEC-062/ENG-012 判据②）`,
     );
   }
 }

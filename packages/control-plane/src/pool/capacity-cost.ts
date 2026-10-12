@@ -27,8 +27,19 @@ export interface DerivationResult {
 /**
  * `N_node = min(N_mem, N_blast)` 推导（与 docs/reliability/failure-domain-matrix.md §4 同源）。
  * 数值为**示例推导值**（PP 参数〔待压测回填〕，敏感性 ±20%）。
+ * 输入校验：非正数值拒绝（0 除会产生 Infinity，不允许出现非有限容量数字）。
  */
 export function deriveNodeCapacity(input: { nodeMemoryGb: number; domainMemoryGb: number; affectedTenantCap: number; recoveryDomainsPerWindow: number; slaRecoveryHours: number; tenantCount: number; yPercent: number }): DerivationResult {
+  const numeric = [input.nodeMemoryGb, input.domainMemoryGb, input.affectedTenantCap, input.recoveryDomainsPerWindow, input.slaRecoveryHours, input.tenantCount, input.yPercent];
+  if (numeric.some((v) => !Number.isFinite(v))) {
+    throw new Error("CAPACITY_INPUT_INVALID: 全部输入必须为有限数值");
+  }
+  if (input.nodeMemoryGb <= 0 || input.domainMemoryGb <= 0 || input.affectedTenantCap <= 0 || input.recoveryDomainsPerWindow <= 0 || input.slaRecoveryHours <= 0 || input.tenantCount < 0) {
+    throw new Error("CAPACITY_INPUT_INVALID: 内存/容量/恢复参数必须为正数，租户总数不得为负");
+  }
+  if (input.yPercent < 0 || input.yPercent > 100) {
+    throw new Error("CAPACITY_INPUT_INVALID: yPercent 须在 [0, 100] 区间");
+  }
   const nMem = Math.floor(input.nodeMemoryGb / input.domainMemoryGb);
   const nBlast = Math.min(input.affectedTenantCap, Math.floor(input.recoveryDomainsPerWindow * input.slaRecoveryHours));
   const nNode = Math.min(nMem, nBlast);
@@ -101,8 +112,22 @@ export interface MarginResult {
   readonly valueBasis: "假设值（上分位假设 + 成本加成 + 毛利护栏；实测回填前报价护栏，PRD-044 判据③）";
 }
 
-/** 单画像 C_tenant（token 为主成本项 ★）与毛利率。 */
+/** 单画像 C_tenant（token 为主成本项 ★）与毛利率。输入校验：负值/非法区间拒绝（0 收入会产生 NaN 毛利率）。 */
 export function grossMargin(assumptions: ProfileAssumptions, cost: CostAssumptions): MarginResult {
+  const numericProfile = [assumptions.inputTokensPerMonth, assumptions.outputTokensPerMonth, assumptions.mcpProcesses, assumptions.storageGb, assumptions.egressGb, assumptions.monthlyRevenue];
+  const numericCost = [cost.inputTokenPrice, cost.outputTokenPrice, cost.cacheDiscount, cost.fixedAmortization, cost.mcpHostingPerProcess, cost.storagePerGb, cost.egressPerGb, cost.windowsPremium];
+  if (numericProfile.some((v) => !Number.isFinite(v)) || numericCost.some((v) => !Number.isFinite(v)) || !Number.isFinite(assumptions.cacheHitRatio)) {
+    throw new Error("COST_INPUT_INVALID: 全部输入必须为有限数值");
+  }
+  if (numericProfile.some((v) => v < 0) || numericCost.some((v) => v < 0)) {
+    throw new Error("COST_INPUT_INVALID: 用量与成本输入不得为负");
+  }
+  if (assumptions.cacheHitRatio < 0 || assumptions.cacheHitRatio > 1) {
+    throw new Error("COST_INPUT_INVALID: cacheHitRatio 须在 [0, 1] 区间");
+  }
+  if (assumptions.monthlyRevenue <= 0) {
+    throw new Error("COST_INPUT_INVALID: monthlyRevenue 必须为正数（否则毛利率无定义）");
+  }
   const inputCost = (assumptions.inputTokensPerMonth / 1_000_000) * cost.inputTokenPrice;
   const outputCost = (assumptions.outputTokensPerMonth / 1_000_000) * cost.outputTokenPrice;
   const cacheCredit = (inputCost + outputCost) * assumptions.cacheHitRatio * cost.cacheDiscount;

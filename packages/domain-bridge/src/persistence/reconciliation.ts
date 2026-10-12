@@ -78,12 +78,16 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
   };
 }
 
-/** RPO 分层（设计 §7.6）：节点内 0（已 flush）；跨节点 = 复制滞后（P99 ≤ 30 s）。 */
-export function rpoLayering(watermark: UploadWatermark, lastLocalSeq: number): { inNodeRpo: 0; crossNodeRpoSeconds: number; definition: string } {
+/** RPO 分层（设计 §7.6；`REL-094`）：节点内 0（已 flush）；跨节点 = 复制滞后（P99 ≤ 30 s）。 */
+export function rpoLayering(watermark: UploadWatermark, lastLocalSeq: number): { inNodeRpo: 0; crossNodeRpoSeconds: number; unuploadedSeqs: number; definition: string } {
+  // 未上传尾部量作为**独立指标**暴露（`REL-096`：不得通过缩小窗口规避未上传尾部）；
+  // 跨节点 RPO 按复制滞后的墙钟口径计算（原实现 `* 0` 死代码已删）。
+  const unuploadedSeqs = Math.max(0, lastLocalSeq - watermark.lastUploadedSeq);
   return {
     inNodeRpo: 0,
-    crossNodeRpoSeconds: Math.max(0, lastLocalSeq - watermark.lastUploadedSeq) * 0 + replicationLagSeconds(watermark),
-    definition: "节点内 RPO = 0（已 flush）；跨节点 RPO = 复制滞后（P99 ≤ 30 s）；不得笼统写 RPO 0",
+    crossNodeRpoSeconds: replicationLagSeconds(watermark),
+    unuploadedSeqs,
+    definition: "节点内 RPO = 0（已 flush）；跨节点 RPO = 复制滞后（P99 ≤ 30 s）；未上传尾部量独立暴露；不得笼统写 RPO 0",
   };
 }
 

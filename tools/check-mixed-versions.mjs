@@ -6,10 +6,13 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join, dirname, resolve } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 
-const root = process.cwd();
+// 仓库根：默认按本文件位置定位（tools/ 的上一级），--root 显式覆盖。
+const here = dirname(fileURLToPath(import.meta.url));
+const rootIdx = process.argv.indexOf("--root");
+const root = rootIdx >= 0 ? resolve(process.argv[rootIdx + 1]) : resolve(here, "..");
 const trains = new Set();
 const sources = [];
 

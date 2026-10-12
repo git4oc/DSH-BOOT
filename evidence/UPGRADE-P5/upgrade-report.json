@@ -42,13 +42,13 @@
     },
     {
       "gate": "契约测试:contract:session-ops",
-      "status": "pass",
-      "output": "exit 0"
+      "status": "fail",
+      "output": "exit 1（诊断见 evidence/UPGRADE-P5/gate1-contract-suites.log）"
     },
     {
       "gate": "契约测试:contract:lifecycle",
-      "status": "pass",
-      "output": "exit 0"
+      "status": "fail",
+      "output": "exit 1（诊断见 evidence/UPGRADE-P5/gate1-contract-suites.log）"
     },
     {
       "gate": "契约测试:fixtures:selftest",
@@ -67,29 +67,35 @@
     },
     {
       "gate": "灰度记录",
-      "status": "pass",
-      "output": "evidence/UPGRADE-P5/canary-record.json"
+      "status": "fail",
+      "output": "灰度记录字段不全（缺 §6.1 必填：rolloutId, batchId, batchTrainVersion, domains, tenantBatchReport, cp2Conclusion, drainedDomains, startedAt, endedAt, verdict）——按 docs/evolution/upgrade-pipeline-spec.md §6.1 补全后重跑"
     },
     {
       "gate": "就绪复验记录",
       "status": "pass",
-      "output": "evidenceHash=10b0678eb9776903"
+      "output": "contract:ready 套件在 gate① 内复验通过（就绪七条逐条失败注入全检出；EVO-032/EVO-003/004 复验入口）"
+    },
+    {
+      "gate": "就绪复验记录(§7.1 跨域逐域证据)",
+      "status": "attest-only",
+      "output": "单进程拓扑无 G4 域清单基线/实测与逐域域外证据——不可机器判定（§7.1 字段 2–8），不伪造通过"
     },
     {
       "gate": "P-1 ctx.tools.register 唯一注册入口",
       "status": "pass",
-      "output": "注册入口仍在域内桥（复核通过）"
+      "output": "注册入口仍在域内桥（复核通过；C49/SPEC-00 §11.4 P-1）"
     },
     {
       "gate": "P-2 域镜像+只读 Profile 属 TCB",
       "status": "pass",
-      "output": "attest：设计 §5.3.1 第 6 项未变（容器挂载只读）"
+      "output": "dev/compose.yml 存在 1 条只读挂载声明（:ro）——TCB 挂载只读可复核（D15/SPEC-00 §11.4 P-2）"
     },
     {
       "gate": "P-3 域内读不隔离",
-      "status": "pass",
-      "output": "attest：设计 C44 未变（need-to-know 走团队/用户级隔离组）"
+      "status": "attest-only",
+      "output": "attest：设计 C44 未变（need-to-know 走团队/用户级隔离组）——语义不可机器判定，显式标注 attest-only"
     }
   ],
-  "failedCount": 0
+  "failedCount": 3,
+  "attestOnlyCount": 2
 }

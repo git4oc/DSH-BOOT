@@ -6,9 +6,10 @@
  * - **workspace 授权时机**：允许集合**在签令牌时固化** + **每次请求校验一次租户与隔离组**
  *   （硬依赖，但在网关本地完成，不进模型热路径）。
  * - 域令牌绑定 `(tenantId, isolationGroupId)`（§4.2.1）。
+ * - 沙箱模式上限未知模式一律拒绝（`SEC-023`/C38）；JWT 验签恒时比较 + 吊销表（`PRD-055`：停用后令牌 ≤ 5 分钟失效）。
  */
 
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 export interface RolePermissions {
   readonly scenarios: readonly string[];
@@ -42,15 +43,51 @@ export function signUserToken(claims: UserTokenClaims, secret: string): string {
   return `${header}.${payload}.${signature}`;
 }
 
-/** 验证 JWT：签名 + 过期 + 返回 claims（OIDC 对接企业 IdP）。 */
-export function verifyUserToken(token: string, secret: string): { ok: boolean; claims?: UserTokenClaims; reason?: string } {
+/** 验证 JWT：签名（恒时比较）+ 过期 + 吊销 + 返回 claims（OIDC 对接企业 IdP）。
+ *  fail-closed：畸形载荷、缺失/非法 `exp`、签名不符、已吊销一律拒绝（`SEC-023` 判定 fail-closed 口径；
+ *  吊销语义见 `PRD-055`：停用后令牌 ≤ 5 分钟失效）。 */
+export function verifyUserToken(token: string, secret: string, revocations?: TokenRevocationRegistry): { ok: boolean; claims?: UserTokenClaims; reason?: string } {
   const parts = token.split(".");
   if (parts.length !== 3) return { ok: false, reason: "JWT_MALFORMED" };
   const expected = createHmac("sha256", secret).update(`${parts[0]}.${parts[1]}`).digest("base64url");
-  if (expected !== parts[2]) return { ok: false, reason: "JWT_SIGNATURE_INVALID" };
-  const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as UserTokenClaims;
+  const expectedBuf = Buffer.from(expected, "utf8");
+  const givenBuf = Buffer.from(parts[2], "utf8");
+  if (expectedBuf.length !== givenBuf.length || !timingSafeEqual(expectedBuf, givenBuf)) return { ok: false, reason: "JWT_SIGNATURE_INVALID" };
+  let claims: UserTokenClaims;
+  try {
+    claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as UserTokenClaims;
+  } catch {
+    return { ok: false, reason: "JWT_MALFORMED" };
+  }
+  if (claims === null || typeof claims !== "object" || Array.isArray(claims)) return { ok: false, reason: "JWT_MALFORMED" };
+  if (typeof claims.exp !== "number" || !Number.isFinite(claims.exp)) return { ok: false, reason: "JWT_MALFORMED" };
   if (claims.exp * 1000 < Date.now()) return { ok: false, reason: "JWT_EXPIRED" };
+  if (revocations !== undefined) {
+    const invalidAfter = revocations.invalidAfter(claims.sub);
+    if (invalidAfter !== undefined && Date.now() >= invalidAfter) return { ok: false, reason: "JWT_REVOKED" };
+  }
   return { ok: true, claims };
+}
+
+/**
+ * 停用吊销表（`PRD-055`：SCIM 停用后**即时撤销**，既有令牌在 ≤ 5 分钟内失效）。
+ * 停用时刻 T 的用户令牌在 T + 5min 后一律被 `verifyUserToken` 拒绝（`JWT_REVOKED`）。
+ */
+export class TokenRevocationRegistry {
+  private readonly invalidAfterByUser = new Map<string, number>();
+
+  /** 登记停用：返回该用户令牌的失效时点（停用时刻 + 5 min；`PRD-055`）。 */
+  revoke(userId: string, deactivatedAt: number): number {
+    const value = deactivatedAt + 5 * 60 * 1000;
+    const existing = this.invalidAfterByUser.get(userId);
+    // 重复停用取更早的失效点：先停用先失效，不放宽既有约束。
+    this.invalidAfterByUser.set(userId, existing === undefined ? value : Math.min(existing, value));
+    return this.invalidAfterByUser.get(userId) as number;
+  }
+
+  invalidAfter(userId: string): number | undefined {
+    return this.invalidAfterByUser.get(userId);
+  }
 }
 
 function b64url(value: string): string {
@@ -69,8 +106,10 @@ export function rbacCheck(policy: RbacPolicy, role: string, request: { scenario?
   return { allowed: true };
 }
 
+/** 沙箱模式上限（`SEC-023`/C38）：未知模式一律拒绝（fail-closed），已列出模式按序比较。 */
 function modeWithinCeiling(mode: string, ceiling: string): boolean {
   const order = ["read-only", "workspace-write"];
+  if (!order.includes(mode) || !order.includes(ceiling)) return false;
   return order.indexOf(mode) <= order.indexOf(ceiling);
 }
 
@@ -86,4 +125,4 @@ export function authorizeWorkspace(claims: UserTokenClaims, request: { tenantId:
 }
 
 /** 拒绝原因码全集（验收：**不含任何软依赖原因码**——软依赖不可用不拒绝执行）。 */
-export const HARD_REJECTION_CODES = ["TENANT_MISMATCH", "ISOLATION_GROUP_MISMATCH", "WORKSPACE_NOT_AUTHORIZED", "JWT_MALFORMED", "JWT_SIGNATURE_INVALID", "JWT_EXPIRED", "RBAC_ROLE_UNKNOWN", "RBAC_SCENARIO_DENIED", "RBAC_PLUGIN_DENIED", "RBAC_TOOL_DENIED", "RBAC_MCP_DENIED", "RBAC_SANDBOX_CEILING", "QUOTA_HARD_EXCEEDED", "QUOTA_WORKSPACE_SHARE_EXCEEDED"] as const;
+export const HARD_REJECTION_CODES = ["TENANT_MISMATCH", "ISOLATION_GROUP_MISMATCH", "WORKSPACE_NOT_AUTHORIZED", "JWT_MALFORMED", "JWT_SIGNATURE_INVALID", "JWT_EXPIRED", "JWT_REVOKED", "RBAC_ROLE_UNKNOWN", "RBAC_SCENARIO_DENIED", "RBAC_PLUGIN_DENIED", "RBAC_TOOL_DENIED", "RBAC_MCP_DENIED", "RBAC_SANDBOX_CEILING", "QUOTA_HARD_EXCEEDED", "QUOTA_WORKSPACE_SHARE_EXCEEDED"] as const;

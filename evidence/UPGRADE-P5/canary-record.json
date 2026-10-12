@@ -1,5 +1,5 @@
 {
-  "upgradeId": "UPGRADE-2026-10-07",
+  "upgradeId": "UPGRADE-2026-10-12",
   "stage": "灰度记录",
   "note": "灰度先于任何域进入（EVO-016）；本记录为进入灰度的前置证据"
 }

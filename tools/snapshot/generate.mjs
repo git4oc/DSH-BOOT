@@ -10,11 +10,14 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join, relative, sep, dirname, resolve } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
-const root = process.cwd();
+// 仓库根：默认按本文件位置定位（tools/snapshot/ 的上两级），--root 显式覆盖。
+const here = dirname(fileURLToPath(import.meta.url));
+const rootIdx = process.argv.indexOf("--root");
+const root = rootIdx >= 0 ? resolve(process.argv[rootIdx + 1]) : resolve(here, "..", "..");
 const modulesRoot = join(root, "node_modules", "@deepseek-ai");
 const KERNEL_TRAIN = process.env.DSH_KERNEL_TRAIN ?? readSeedTrain();
 

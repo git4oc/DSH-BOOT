@@ -48,8 +48,8 @@ export interface AttestResponse {
 export interface FaultKnobs {
   /** 模型流首字节前延迟（ms）→ 触发 `T_m` 路径。 */
   ttfbMs?: number;
-  /** 流模式：normal / aborted（显式终止帧）/ adapter-error（错误帧 + 终止帧）。 */
-  streamMode?: "normal" | "aborted" | "adapter-error";
+  /** 流模式：normal / aborted（显式终止帧）/ adapter-error（错误帧 + 终止帧）/ bad-frame（坏 JSON 帧 → 客户端须定性 adapter-error）。 */
+  streamMode?: "normal" | "aborted" | "adapter-error" | "bad-frame";
   /** 固定 chunk 序列覆盖（逐字段透传给客户端）。 */
   fixedChunks?: readonly string[];
   /** `/internal/kernel/approval/request` 不响应（挂起）→ 触发 `T_a`。 */

@@ -18,6 +18,7 @@ import { createCaptureGateway } from "../../fixtures/llm/capture-gateway.ts";
 import {
   DSH_LLM_RETRY_MOUNTED,
   GatewayLlmAdapter,
+  attributionHeaders,
   clearCurrentTurnContext,
   setCurrentTurnContext,
 } from "../../../../packages/domain-bridge/src/llm/index.ts";
@@ -242,6 +243,57 @@ async function main() {
       noThisForm && usesModuleFn && retryDeclared,
       `源码无 this.attributionHeaders=${noThisForm}，模块级函数出站携带=${usesModuleFn}，dsh-llm-retry 不挂载显式声明=${retryDeclared}（ENG-008 判据③ / REL-102）`,
     );
+  }
+
+  // ── 8. 并发轮次归因正确性：AsyncLocalStorage 隔离并发执行链（ENG-008/C-2）──
+  {
+    const interleave = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const chain = async (turnId, attribution, steps) => {
+      setCurrentTurnContext(turnId, attribution);
+      const seen = [];
+      for (const wait of steps) {
+        await interleave(wait);
+        seen.push(attributionHeaders()["x-ov-turn-id"]);
+      }
+      return seen;
+    };
+    // 两条并发执行链交错挂起/恢复：各自归因上下文互不覆盖（修复前为进程级单例，互相踩踏）
+    const [chain1, chain2] = await Promise.all([
+      chain("turn-A", "a=1", [10, 10, 10]),
+      chain("turn-B", "a=2", [5, 5, 5, 5, 5, 5]),
+    ]);
+    const isolated = chain1.every((id) => id === "turn-A") && chain2.every((id) => id === "turn-B");
+    // clearCurrentTurnContext 后出站无 turnId（网关 400 方向不变）
+    clearCurrentTurnContext();
+    const cleared = attributionHeaders()["x-ov-turn-id"] === undefined;
+    record(
+      "CONCURRENT-TURN-ATTRIBUTION",
+      isolated && cleared,
+      `并发轮次归因隔离=${isolated}（chain1=${chain1.join(",")} chain2=${chain2.join(",")}），清除后无 turnId=${cleared}（ENG-008/C-2）`,
+    );
+  }
+
+  // ── 9. 网关坏帧（streamMode=bad-frame）→ 定性 adapter-error，不伪装 aborted ──
+  {
+    const stub = createGatewayStub({
+      port: 0,
+      seedProfile: { profileId: "dev-seed", trainVersion: "0" },
+      initialKnobs: { streamMode: "bad-frame" },
+    });
+    const port = await listenStub(stub);
+    const adapter = new GatewayLlmAdapter({ gatewayBaseUrl: `http://127.0.0.1:${port}`, modelStreamSeconds: 10 });
+    setCurrentTurnContext("turn-BADFRAME-001", "provider=stub");
+    const chunks = await consume(adapter.stream(deepFreeze({ provider: "stub", model: "stub-small", prompt: "bad-frame" })));
+    const last = chunks[chunks.length - 1];
+    const labeled = last.kind === "done" && last.reason === "adapter-error";
+    const notAborted = chunks.every((c) => !(c.kind === "done" && c.reason === "aborted"));
+    record(
+      "BAD-FRAME-ADAPTER-ERROR",
+      labeled && notAborted,
+      `网关输出坏帧定性为 adapter-error=${labeled && notAborted}（终态 reason=${last.reason}；CTR-001 §2.5：损坏不得伪装成用户取消）`,
+    );
+    await stub.close();
+    clearCurrentTurnContext();
   }
 }
 

@@ -27,6 +27,7 @@ import {
   verifyDomainToken,
   getTokenAudits,
 } from "../../../../packages/control-plane/src/token/domain-token.ts";
+import { createGatewayStub, listenStub } from "../../../../packages/reverse-gateway/src/stub/index.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..", "..", "..");
@@ -275,6 +276,20 @@ async function main() {
       sameTenant.ok === true && crossTenant.ok === false && audit.length === 1 && tampered.ok === false,
       `同租户放行=${sameTenant.ok}，跨租户拒绝=${crossTenant.ok === false}，硬审计 ${audit.length} 条（token.cross_tenant_rejected）=${audit.length === 1}，签名篡改拒绝=${tampered.ok === false}（SEC-007/SEC-008，§4.2.1 域令牌绑定 (tenantId, isolationGroupId)）`,
     );
+  }
+
+  // ── 9. 网关桩自检：port=0（临时端口）下 selfCheck 用实际绑定端口（ENG-043/044）──
+  {
+    const stub = createGatewayStub({ port: 0, seedProfile: { profileId: "dev-seed", trainVersion: "0" } });
+    const port = await listenStub(stub); // port=0 ⇒ 实际绑定临时端口
+    const selfCheck = await stub.selfCheck();
+    const ephemeralPort = port !== 0; // 实际绑定的不是配置值 0
+    record(
+      "STUB-SELFCHECK-EPHEMERAL-PORT",
+      selfCheck.verdict === "pass" && ephemeralPort,
+      `port=0 临时端口=${ephemeralPort}，selfCheck 对实际绑定端口执行且全过=${selfCheck.verdict === "pass"}${selfCheck.problems.length > 0 ? `，problems=${selfCheck.problems.join("；")}` : ""}（ENG-043/ENG-044 桩自检）`,
+    );
+    await stub.close();
   }
 }
 

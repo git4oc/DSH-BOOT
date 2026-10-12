@@ -107,12 +107,23 @@ test("GATE-004-4: workspace 独占租约生效——无并发写同一 workspace
   // fencing：当前持有者 epoch 匹配才可写
   assert.equal(leases.writeAllowed("/workspace/ws-1", "domain:a:ig-1", 1), true);
   assert.equal(leases.writeAllowed("/workspace/ws-1", "domain:b:ig-1", 1), false);
-  // 可转移租约：epoch +1，源域旧 epoch 写被拒（fencing）
-  const transferred = leases.transfer("/workspace/ws-1", "domain:b:ig-1");
+  // 所有权校验（REL-068 独占性）：非当前持有域不得发起转移
+  assert.throws(() => leases.transfer("/workspace/ws-1", "domain:c:ig-1", "domain:b:ig-1"), /WORKSPACE_LEASE_NOT_OWNED/);
+  assert.ok(leases.audit.some((a) => a.kind === "workspace.lease.transfer.denied" && a.domainId === "domain:c:ig-1"));
+  // 可转移租约：当前持有域发起，epoch +1，源域旧 epoch 写被拒（fencing）
+  const transferred = leases.transfer("/workspace/ws-1", "domain:a:ig-1", "domain:b:ig-1");
   assert.equal(transferred.epoch, 2);
   assert.equal(leases.writeAllowed("/workspace/ws-1", "domain:a:ig-1", 1), false);
   assert.equal(leases.writeAllowed("/workspace/ws-1", "domain:b:ig-1", 2), true);
   assert.ok(leases.audit.some((a) => a.kind === "workspace.lease.transferred"));
+  // 转入与转出域相同：拒绝
+  assert.throws(() => leases.transfer("/workspace/ws-1", "domain:b:ig-1", "domain:b:ig-1"), /WORKSPACE_LEASE_TRANSFER_SELF/);
+  // 释放：非持有域释放被拒 + 审计；持有域释放成功
+  assert.throws(() => leases.release("/workspace/ws-1", "domain:a:ig-1"), /WORKSPACE_LEASE_NOT_OWNED/);
+  assert.ok(leases.audit.some((a) => a.kind === "workspace.lease.release.denied" && a.domainId === "domain:a:ig-1"));
+  leases.release("/workspace/ws-1", "domain:b:ig-1");
+  assert.ok(leases.audit.some((a) => a.kind === "workspace.lease.released" && a.domainId === "domain:b:ig-1"));
+  assert.equal(leases.writeAllowed("/workspace/ws-1", "domain:b:ig-1", 2), false);
 });
 
 test("P2-1: 域池三态——冻结前置条件 + 快照完整性 + 等待页（§10.4/§10.1）", async () => {
@@ -138,11 +149,14 @@ test("P2-1: 域池三态——冻结前置条件 + 快照完整性 + 等待页�
   assert.deepEqual(restored.pendingUploadBuffer, pending);
   assert.deepEqual(restored.projectionCache, { sessionId: "s-1", preset: "p-1" });
   assert.equal(pool.current("d-1"), "hot");
-  // 冷启动：池空排队 → 等待页而非错误码（§10.1）
+  // 冷启动：池空排队 → 等待页而非错误码（§10.1）；已热域诚实返回 waitingPage:false
   const cold = await pool.coldStart("d-2");
   assert.equal(cold.waitingPage, true);
   assert.equal(cold.state, "hot");
   assert.equal(pool.current("d-2"), "hot");
+  const warm = await pool.coldStart("d-2");
+  assert.equal(warm.waitingPage, false); // 已热：诚实语义，不再返回等待页
+  assert.equal(warm.state, "hot");
 });
 
 test("P2-2: 运行期漂移两类事件 + 网络策略（§4.1/§9.3）", () => {
@@ -152,6 +166,11 @@ test("P2-2: 运行期漂移两类事件 + 网络策略（§4.1/§9.3）", () => 
   assert.equal(lifecycle.evictDomain, false);
   assert.equal(lifecycle.toolUnavailable, true);
   assert.equal(lifecycle.autoReload, true);
+  // 先验归属（SEC-018）：未授权 connector 的生命周期事件也是异常漂移 → 摘域
+  const unauthorizedLifecycle = classifyDrift({ kind: "connector-lifecycle", name: "evil-mcp", authorized: false });
+  assert.equal(unauthorizedLifecycle.eventClass, "unauthorized-drift");
+  assert.equal(unauthorizedLifecycle.evictDomain, true);
+  assert.equal(unauthorizedLifecycle.requiresSeparateApproval, true);
   // Profile 未授权的插件/工具出现（异常）→ 摘域 + 单独审批
   const drift = classifyDrift({ kind: "tool-drift", name: "mcp_evil_tool", authorized: false });
   assert.equal(drift.eventClass, "unauthorized-drift");
@@ -163,4 +182,25 @@ test("P2-2: 运行期漂移两类事件 + 网络策略（§4.1/§9.3）", () => 
   assert.equal(policy.inbound().allowed, false);
   assert.equal(policy.egress("https://api.github.com/repos").allowed, true);
   assert.equal(policy.egress("https://evil.example.com").allowed, false);
+});
+
+test("P2-3: 隔离域 ID 格式校验 + 容量/成本输入校验（D5 防御；0/负值拒绝而非 Infinity/NaN）", () => {
+  const registry = new IsolationDomainRegistry();
+  // ID 格式校验：":" 注入（可能造成 domainId 歧义碰撞）被拒
+  assert.throws(() => registry.assign({ tenantId: "a:b", isolationGroupId: "c" }), /DOMAIN_ID_INVALID/);
+  assert.throws(() => registry.assign({ tenantId: "tenant-a", isolationGroupId: "ig:1" }), /DOMAIN_ID_INVALID/);
+  assert.throws(() => registry.assign({ tenantId: "", isolationGroupId: "ig-1" }), /DOMAIN_ID_INVALID/);
+  // 合法 ID 正常分配
+  assert.equal(registry.assign({ tenantId: "tenant-a", isolationGroupId: "ig-1" }).domainId, "domain:tenant-a:ig-1");
+  // 容量输入校验：0/负值/越界拒绝（不产生 Infinity）
+  assert.throws(() => deriveNodeCapacity({ nodeMemoryGb: 256, domainMemoryGb: 0, affectedTenantCap: 50, recoveryDomainsPerWindow: 2, slaRecoveryHours: 30, tenantCount: 1000, yPercent: 10 }), /CAPACITY_INPUT_INVALID/);
+  assert.throws(() => deriveNodeCapacity({ nodeMemoryGb: -256, domainMemoryGb: 2.5, affectedTenantCap: 50, recoveryDomainsPerWindow: 2, slaRecoveryHours: 30, tenantCount: 1000, yPercent: 10 }), /CAPACITY_INPUT_INVALID/);
+  assert.throws(() => deriveNodeCapacity({ nodeMemoryGb: 256, domainMemoryGb: 2.5, affectedTenantCap: 50, recoveryDomainsPerWindow: 2, slaRecoveryHours: 30, tenantCount: 1000, yPercent: 150 }), /CAPACITY_INPUT_INVALID/);
+  // 成本输入校验：0 收入/负值/越界 cacheHitRatio 拒绝（不产生 NaN 毛利率）
+  const cost = { inputTokenPrice: 0.5, outputTokenPrice: 2.0, cacheDiscount: 0.5, fixedAmortization: 30, mcpHostingPerProcess: 8, storagePerGb: 0.1, egressPerGb: 0.05, windowsPremium: 5 };
+  const profile = { profile: "p", inputTokensPerMonth: 100, outputTokensPerMonth: 100, cacheHitRatio: 0.3, mcpProcesses: 1, storageGb: 2, egressGb: 1, monthlyRevenue: 100 };
+  assert.throws(() => grossMargin({ ...profile, monthlyRevenue: 0 }, cost), /COST_INPUT_INVALID/);
+  assert.throws(() => grossMargin({ ...profile, egressGb: -1 }, cost), /COST_INPUT_INVALID/);
+  assert.throws(() => grossMargin({ ...profile, cacheHitRatio: 1.5 }, cost), /COST_INPUT_INVALID/);
+  assert.ok(Number.isFinite(grossMargin(profile, cost).grossMargin));
 });

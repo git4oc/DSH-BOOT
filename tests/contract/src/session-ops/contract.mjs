@@ -68,26 +68,83 @@ test("P4-3: 最小审计集六类 fail-closed + WORM 哈希链 + 五元组审计
   assert.equal(r1.hash.length, 64);
 });
 
-test("P4-4: DSR 删除报告覆盖全清单八类 + 哈希链证明 + 时延/撤销窗口（SEC-074–088）", () => {
+test("P4-4: DSR 删除——回调式真实删除 fail-closed + 四件套证明 + 时延/撤销窗口（SEC-078–088）", () => {
   const log = new WormAuditLog();
   const service = new RetentionService(log);
-  const proof = service.deleteAll("tenant-a");
-  // 全清单八类（含附件/spill/FTS/快照）
+  // 未接线的清单类：如实标注"由部署者接线"，deleted:false——不得硬编码已删除（SEC-079/080/081/088）
+  const unWired = service.deleteAll("tenant-a");
+  assert.ok(unWired.inventory.filter((e) => e.item !== "audit").every((e) => e.deleted === false && e.note.includes("由部署者接线")));
+  assert.equal(unWired.tombstones.length, 0); // 未接线 ⇒ 无真实删除 ⇒ 无墓碑（不留假记录）
+  // 全清单接线：八类逐项回调删除（audit 假名化保留，SEC-085）
+  const deleted = [];
+  const proof = service.deleteAll("tenant-a", {
+    legalHoldAuditPseudonymized: true,
+    handlers: Object.fromEntries(RETENTION_INVENTORY.filter((i) => i !== "audit").map((i) => [i, () => deleted.push(i)])),
+    now: 1_000_000,
+  });
+  assert.deepEqual(deleted.sort(), [...RETENTION_INVENTORY.filter((i) => i !== "audit")].sort()); // 真实删除逐类执行
   assert.deepEqual(proof.inventory.map((e) => e.item), [...RETENTION_INVENTORY]);
   assert.equal(proof.inventory.length, 8);
-  assert.ok(proof.inventory.every((e) => e.deleted === true || e.note.includes("假名化")));
-  // spill/attachments 固定到域卷
-  assert.ok(proof.inventory.find((e) => e.item === "spill").note.includes("固定到域卷"));
-  assert.ok(proof.inventory.find((e) => e.item === "attachments").note.includes("固定到域卷"));
-  // 合法扣留优先：审计假名化而非删除
+  assert.ok(proof.inventory.filter((e) => e.item !== "audit").every((e) => e.deleted === true));
+  // 合法扣留优先：审计假名化而非删除（SEC-085）
   assert.equal(proof.inventory.find((e) => e.item === "audit").deleted, false);
   assert.ok(proof.inventory.find((e) => e.item === "audit").note.includes("假名化"));
-  // 生效时延 ≤ 24 h、撤销窗口 7 天
+  // 生效时延 ≤ 24 h、撤销窗口 7 天（SEC-084）
   assert.equal(proof.effectiveWithinHours, 24);
   assert.equal(proof.revocationWindowDays, 7);
   assert.equal(proof.chainHash.length, 64);
-  // 撤销窗口
-  assert.deepEqual(service.revoke("tenant-a"), { revoked: true, withinWindowDays: 7 });
+  assert.equal(proof.tombstones.length, 7); // 七类真实删除登记墓碑
+});
+
+test("P4-4b: DSR 删除 fail-closed——回调失败整体拒绝，不出具证明（SEC-082/SEC-083）", () => {
+  const log = new WormAuditLog();
+  const service = new RetentionService(log);
+  const calls = [];
+  assert.throws(() => service.deleteAll("tenant-a", {
+    handlers: Object.fromEntries(RETENTION_INVENTORY.filter((i) => i !== "audit").map((i) => [
+      i,
+      i === "fts-derived" ? () => { throw new Error("storage unavailable"); } : () => calls.push(i),
+    ])),
+    now: 2_000_000,
+  }), /DSR_DELETE_FAILED.*fts-derived/);
+  assert.equal(service.revoke("tenant-a", 2_000_000).revoked, false); // 失败的 DSR 无墓碑可撤销
+  // 第二次删除（全部成功）：chainHash 只覆盖本租户墓碑，且失败未留下假墓碑
+  const proof = service.deleteAll("tenant-a", {
+    legalHoldAuditPseudonymized: true,
+    handlers: Object.fromEntries(RETENTION_INVENTORY.filter((i) => i !== "audit").map((i) => [i, () => calls.push(i)])),
+    now: 3_000_000,
+  });
+  assert.equal(proof.tombstones.length, 7);
+  assert.equal(calls.filter((i) => i === "fts-derived").length, 1); // 失败项未产生假删除
+  // 停写锁：删除进行中不允许并发第二次删除（SEC-082）
+  const reentrant = new RetentionService(new WormAuditLog());
+  assert.throws(() => reentrant.deleteAll("tenant-b", {
+    handlers: Object.fromEntries(RETENTION_INVENTORY.filter((i) => i !== "audit").map((i) => [
+      i,
+      i === "spill" ? () => { throw new Error("fail"); } : () => {},
+    ])),
+  }), /DSR_DELETE_FAILED/);
+  // spill 回调失败抛错后锁必须已释放：下一次删除可正常进行
+  const afterFail = reentrant.deleteAll("tenant-b", {
+    legalHoldAuditPseudonymized: true,
+    handlers: Object.fromEntries(RETENTION_INVENTORY.filter((i) => i !== "audit").map((i) => [i, () => {}])),
+  });
+  assert.equal(afterFail.tombstones.length, 7);
+});
+
+test("P4-4c: 撤销窗口 7 天（SEC-084）——窗外拒绝 + 审计；无墓碑拒绝", () => {
+  const log = new WormAuditLog();
+  const service = new RetentionService(log);
+  const day = 24 * 60 * 60 * 1000;
+  service.deleteAll("tenant-a", {
+    legalHoldAuditPseudonymized: true,
+    handlers: Object.fromEntries(RETENTION_INVENTORY.filter((i) => i !== "audit").map((i) => [i, () => {}])),
+    now: 0,
+  });
+  assert.equal(service.revoke("tenant-a", 3 * day).revoked, true); // 第 3 天撤销成功
+  assert.equal(service.revoke("tenant-a", 8 * day).revoked, false); // 第 8 天撤销被拒
+  assert.ok(service.revoke("tenant-a", 8 * day).reason.includes("窗口"));
+  assert.equal(service.revoke("tenant-unknown", 1 * day).revoked, false); // 无墓碑拒绝
 });
 
 test("P4-5: 三个正交语义——:unregister ≠ DELETE ≠ 删会话历史（§7.5）", () => {

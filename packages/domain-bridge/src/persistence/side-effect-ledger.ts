@@ -1,11 +1,16 @@
 /**
  * 副作用台账（`REL-072`–`REL-075`；设计 §7.4.1）。
  *
- * - 对标记为**非幂等**的工具，**执行前**把九字段条目落到**域外**；写入为**硬**
+ * - 对标记为**非幂等的工具，**执行前**把九字段条目落到**域外**；写入为**硬**
  *   （属最小审计集，`SEC-069`）：写入失败 ⇒ 工具调用被拒绝（fail-closed）。
+ *   域外持久化：构造时传入 `durablePath`（部署挂载的**域外卷** JSONL 文件，
+ *   `REL-072`「写入域外」的实现载体），O_APPEND 逐条落盘；**不传 `durablePath` 时
+ *   仅内存数组，如实标注为测试/夹具形态**（不满足 `REL-072` 的域外写入要求）。
  * - 恢复后对"结果未确认"的调用，由**产品策略（而非模型判断）禁止自动重试**（`REL-074`）。
  * - 嵌套派发复用外层持久调用（`C43`）：此类工具必须显式声明二选一，未声明者不得注册（`REL-075`）。
  */
+
+import { closeSync, openSync, writeSync } from "node:fs";
 
 export interface LedgerEntry {
   readonly tenantId: string;
@@ -33,6 +38,35 @@ export class SideEffectLedger {
   private readonly entries: LedgerEntry[] = [];
   /** 注入口（`ENG-046` 夹具）：令台账写入失败 ⇒ 调用被拒（fail-closed）。 */
   public failWrites = false;
+  /** 域外持久化落盘路径（部署挂载的域外卷 JSONL 文件，`REL-072`）；未配置 = 仅内存（夹具形态）。 */
+  private readonly durablePath: string | undefined;
+
+  constructor(options: { durablePath?: string } = {}) {
+    this.durablePath = options.durablePath;
+  }
+
+  /**
+   * 域外落盘（硬）：O_APPEND 逐条追加到域外卷 JSONL；任何写失败 ⇒ 抛（fail-closed，
+   * `REL-072`），调用方必须拒绝工具执行。未配置 `durablePath` 时为 no-op（夹具形态，
+   * 调用方须自行按上表如实标注）。
+   */
+  private appendDurably(entry: LedgerEntry): void {
+    if (this.durablePath === undefined) return;
+    const line = `${JSON.stringify(entry)}\n`;
+    let fd: number;
+    try {
+      fd = openSync(this.durablePath, "a");
+    } catch (error) {
+      throw new Error(`SESSION_SIDECFFECT_LEDGER_WRITE_FAILED: durable out-of-domain append failed (fail-closed, REL-072): ${String(error)}`);
+    }
+    try {
+      writeSync(fd, line);
+    } catch (error) {
+      throw new Error(`SESSION_SIDECFFECT_LEDGER_WRITE_FAILED: durable out-of-domain append failed (fail-closed, REL-072): ${String(error)}`);
+    } finally {
+      closeSync(fd);
+    }
+  }
 
   /**
    * 执行前写台账（硬）：写入失败即抛（fail-closed，`REL-072`），调用方必须拒绝工具执行。
@@ -43,6 +77,7 @@ export class SideEffectLedger {
       throw new Error("SESSION_SIDECFFECT_LEDGER_WRITE_FAILED: ledger write is hard (fail-closed, REL-072)");
     }
     const full: LedgerEntry = { ...entry, outcome: entry.outcome ?? "unconfirmed" };
+    this.appendDurably(full); // 域外落盘先行（REL-072：执行前写入域外），失败即抛
     this.entries.push(full);
     return full;
   }

@@ -7,11 +7,14 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join, dirname, resolve } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { buildSnapshot } from "./generate.mjs";
 
-const root = process.cwd();
+// 仓库根：默认按本文件位置定位（tools/snapshot/ 的上两级），--root 显式覆盖。
+const here = dirname(fileURLToPath(import.meta.url));
+const rootIdx = process.argv.indexOf("--root");
+const root = rootIdx >= 0 ? resolve(process.argv[rootIdx + 1]) : resolve(here, "..", "..");
 
 /** 四个反转面的符号集（`ENG-033`：逐面给出"签名是否变化"结论）。 */
 export const REVERSAL_FACES = {

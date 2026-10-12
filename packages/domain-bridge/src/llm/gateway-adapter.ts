@@ -270,12 +270,19 @@ export class GatewayLlmAdapter extends LlmAdapter {
           // 连接在终止帧前中断：显式补终止帧（不得伪装成正常结束）。
           yield { kind: "done", reason: "adapter-error" as const };
           return;
-        } catch {
-          // 读流中断 = 外部 abort 或 `T_m` 到期；终止帧显式区分（不得伪装成正常结束）。
-          yield {
-            kind: "done",
-            reason: (abortKind === "timeout" ? "adapter-error" : "aborted") as "aborted" | "adapter-error",
-          };
+        } catch (error) {
+          // 定性方向固定：外部 abort ⇒ aborted；`T_m` 到期 ⇒ adapter-error；
+          // **其余**（网关输出坏帧等非 abort 失败）⇒ adapter-error——不得把损坏伪装成用户取消
+          //（与上方 fetch 阶段同方向，`CTR-001` §2.5 错误语义）。
+          if (controller.signal.aborted) {
+            yield {
+              kind: "done",
+              reason: (abortKind === "timeout" ? "adapter-error" : "aborted") as "aborted" | "adapter-error",
+            };
+            return;
+          }
+          void error;
+          yield { kind: "done", reason: "adapter-error" as const };
           return;
         }
       }

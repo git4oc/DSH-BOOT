@@ -80,7 +80,8 @@ export function registerTool(
  * 组合面收敛（域启动期一次性装配，`CTR-001` §3.6）：
  * ① Profile 安全字段收敛校验（`SEC-DOC-03` 拦截点 4/5，违规即域启动失败）；
  * ② 安装纵深防御（全局 `guard()`，`ENG-004` 判据①）；
- * ③ 返回唯一注册入口。
+ * ③ 返回唯一注册入口——**含审批注册准入**（`approvalAdmission` 转发给每次注册，
+ * `SEC-062`/`ENG-012` 判据②：参数无法送达 ⇒ 不予注册且不得进入 `requireApproval`）。
  */
 export function installToolBridge(
   ctx: ClientContext,
@@ -93,6 +94,10 @@ export function installToolBridge(
     permissionPresets?: { enabled?: readonly string[]; reachable?: readonly string[] };
   },
   telemetry: BridgeTelemetry,
+  options: {
+    /** 审批注册准入（`SEC-DOC-06` §6.1）：返回拒绝理由则不予注册（`ENG-012` 判据②）。 */
+    approvalAdmission?: (definition: ToolDefinition) => string | undefined;
+  } = {},
 ): ToolBridgeHandle {
   const violations = convergeProfileSecurity(profile);
   if (violations.length > 0) {
@@ -104,7 +109,11 @@ export function installToolBridge(
 
   const handle: ToolBridgeHandle = {
     registerTool(definition: ToolDefinition): () => void {
-      return registerTool(definition, ctx, { allowlist: profile.toolAllowlist, telemetry });
+      return registerTool(definition, ctx, {
+        allowlist: profile.toolAllowlist,
+        telemetry,
+        approvalAdmission: options.approvalAdmission, // 审批注册准入在组合面同样生效（SEC-062）
+      });
     },
     guardInstalled: true,
     dispose(): void {

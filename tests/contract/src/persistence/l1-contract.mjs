@@ -20,8 +20,9 @@ import {
 import { computeUnclosed, recover, RECOVERY_SPANS, spanCoverageSpans, assertLogSizeBound } from "../../../../packages/domain-bridge/src/persistence/recovery.ts";
 import { SideEffectLedger, nestedPolicyDeclared, entryComplete } from "../../../../packages/domain-bridge/src/persistence/side-effect-ledger.ts";
 import { SplitBuffer } from "../../../../packages/domain-bridge/src/persistence/buffers.ts";
-import { reconcile, dedupeByTurn, DIFF_RATE_THRESHOLD } from "../../../../packages/domain-bridge/src/persistence/reconciliation.ts";
+import { reconcile, dedupeByTurn, DIFF_RATE_THRESHOLD, rpoLayering } from "../../../../packages/domain-bridge/src/persistence/reconciliation.ts";
 import { MigrationStateMachine } from "../../../../packages/domain-bridge/src/persistence/migration.ts";
+import { DEFAULT_MAX_PENDING_BYTES } from "../../../../packages/domain-bridge/src/persistence/jsonl-persistence.ts";
 
 function header(id) {
   return { id, formatVersion: CURRENT_FORMAT_VERSION, createdAt: new Date().toISOString(), tenantId: "t1", isolationGroupId: "ig1" };
@@ -310,4 +311,125 @@ test("GATE-003-5: 迁移状态机五态 + seq 断言 + FAILED 幂等重驱动（
   const final = migration.snapshot();
   assert.equal(final.state, "OWNED");
   assert.equal(final.epoch, 1); // epoch 提升：源在提升后的 append 被拒（fencing，REL-083）
+});
+
+// ── 2026-10-12 修复钉死（阻断#2/#3/#4/#5、建议#10/13/15/17 对应行为）──────────
+
+test("FIX-2: 迁移 seq 断言——未 recordSeqs 即迁移 ⇒ FAILED（REL-079 防空洞通过）", () => {
+  const migration = new MigrationStateMachine("m-fix2");
+  migration.transition("HANDOFF_ARMED");
+  migration.transition("SOURCE_RELEASED");
+  // 未调用 recordSeqs：断言必须失败（不得因 undefined !== undefined 为 false 而空洞通过）
+  migration.transition("OWNED");
+  assert.equal(migration.snapshot().state, "FAILED");
+  assert.ok(migration.snapshot().steps.some((step) => step.includes("seqs not asserted")));
+  // FAILED 可重驱动（REL-080），补记序号后正常 handoff
+  migration.redrive();
+  assert.equal(migration.snapshot().state, "PENDING");
+  migration.transition("HANDOFF_ARMED");
+  migration.transition("SOURCE_RELEASED");
+  // transition 直传 input 序号：相等即放行（不依赖 recordSeqs）
+  migration.transition("OWNED", { targetBaseSeq: 7, sourceLastReplicatedSeq: 7 });
+  assert.equal(migration.snapshot().state, "OWNED");
+  assert.equal(migration.snapshot().epoch, 1);
+  // transition 直传不等序号 ⇒ FAILED（步骤 4 断言仍然生效）
+  const m2 = new MigrationStateMachine("m-fix2b");
+  m2.transition("HANDOFF_ARMED");
+  m2.transition("SOURCE_RELEASED");
+  m2.transition("OWNED", { targetBaseSeq: 1, sourceLastReplicatedSeq: 2 });
+  assert.equal(m2.snapshot().state, "FAILED");
+});
+
+test("FIX-3: 分缓冲超时驱逐——墓碑归属被驱逐条目自身的租户（审计归属不错位）", () => {
+  const alerts = [];
+  const buffer = new SplitBuffer({ level: "audit", bufferSeconds: 1, maxEntries: 100, onAlert: (t) => alerts.push(t) });
+  buffer.enqueue("tenant-A", "turn-a", { seq: 1 });
+  buffer.enqueue("tenant-B", "turn-b", { seq: 2 });
+  // 等过 bufferSeconds 使全部条目过期（超时驱逐路径）
+  return new Promise((resolve) => setTimeout(resolve, 1100)).then(() => {
+    buffer.drain(); // 触发 evictExpired
+    assert.equal(alerts.length, 2);
+    assert.equal(alerts[0].tenantId, "tenant-A"); // 归属被驱逐条目自身，不是下一条
+    assert.equal(alerts[1].tenantId, "tenant-B"); // 不是 "unknown"
+  });
+});
+
+test("FIX-4: create 并发原子性——已存在即 SessionAlreadyExistsError（flag:wx，不静默覆盖）", async () => {
+  const root = mkdtempSync(join(tmpdir(), "fix4-"));
+  const store = new JsonlSessionPersistence(root, devOpts());
+  const handle = await store.create(header("s-fix4"));
+  await handle.append([event("turn-start", { turnId: "t1" })]);
+  // 并发 create 同一 id：必须被拒（EEXIST → SessionAlreadyExistsError），不得覆盖首写
+  await assert.rejects(() => store.create(header("s-fix4")), (error) => error.name === "SESSION_ALREADY_EXISTS");
+  await handle.flush();
+  const reopened = await store.open("s-fix4", "read");
+  const events = await reopened.read();
+  assert.equal(events.length, 1); // 首写未被覆盖
+  await reopened.close();
+  await handle.close();
+  assert.equal(DEFAULT_MAX_PENDING_BYTES, 64 * 1024 * 1024); // 未决缓冲默认上限：64 MiB（自定义登记值）
+});
+
+test("FIX-5: flush/close O_APPEND 追加写 + 未决缓冲上限 fail-closed（P-2/P-3；上限为自定义登记）", async () => {
+  const root = mkdtempSync(join(tmpdir(), "fix5-"));
+  const store = new JsonlSessionPersistence(root, devOpts());
+  const handle = await store.create(header("s-fix5"));
+  // 未决缓冲上限：超限即拒绝（fail-closed），flush 后可继续
+  const tiny = await store.create(header("s-fix5b"), { maxPendingBytes: 1024 });
+  await assert.rejects(
+    () => tiny.append([{ kind: "big", blob: "x".repeat(2048) }]),
+    /SESSION_PENDING_OVERFLOW/,
+  );
+  await tiny.flush();
+  await tiny.append([{ kind: "after-flush", ok: true }]); // flush 后缓冲清零，可继续 append
+  await tiny.flush();
+  await tiny.close();
+  const checkTiny = await store.open("s-fix5b", "read");
+  assert.equal((await checkTiny.read()).length, 1);
+  await checkTiny.close();
+  // O_APPEND 追加写：多次 flush 数据全部落盘且顺序正确（不整读重写）
+  await handle.append([event("turn-start", { turnId: "t1" })]);
+  await handle.flush();
+  await handle.append([event("tool", { turnId: "t1", callId: "c1" })]);
+  await handle.flush();
+  await handle.append([event("turn-end", { turnId: "t1" })]);
+  await handle.flush();
+  const reader = await store.open("s-fix5", "read");
+  const events = await reader.read();
+  assert.deepEqual(events.map((e) => e.kind), ["turn-start", "tool", "turn-end"]);
+  await reader.close();
+  await handle.close();
+});
+
+test("FIX-6: 锁文件损坏 ⇒ fail-closed 拒绝（SessionAlreadyOwnedError，修复走 REL-082 处置）", async () => {
+  const root = mkdtempSync(join(tmpdir(), "fix6-"));
+  const store = new JsonlSessionPersistence(root, devOpts());
+  const handle = await store.create(header("s-fix6"));
+  writeFileSync(join(root, "s-fix6.session.lock"), '{"epoch":'); // 崩溃残留半帧锁文件
+  await assert.rejects(() => store.open("s-fix6", "write", devOpts()), (error) => error.name === "SESSION_ALREADY_OWNED");
+  await handle.close();
+});
+
+test("FIX-7: 副作用台账域外落盘——durablePath 逐条落盘，写失败即抛（REL-072 fail-closed）", async () => {
+  const durablePath = join(mkdtempSync(join(tmpdir(), "fix7-")), "ledger.jsonl");
+  const ledger = new SideEffectLedger({ durablePath });
+  const entry = ledger.recordBeforeExecution({
+    tenantId: "t1", isolationGroupId: "ig1", workspaceId: "ws1", sessionId: "s1", turnId: "t-1",
+    callId: "c1", toolName: "shell", paramDigest: "sha512-x", targetResource: "/workspace/deploy.sh",
+  });
+  assert.ok(entryComplete(entry));
+  // 域外落盘已发生：JSONL 可独立读出（真源在域外，不只在内存）
+  const lines = readFileSync(durablePath, "utf8").split("\n").filter((line) => line.length > 0);
+  assert.equal(lines.length, 1);
+  assert.equal(JSON.parse(lines[0]).callId, "c1");
+  // 目录不存在（域外卷不可写）⇒ fail-closed 抛错
+  const failing = new SideEffectLedger({ durablePath: join(tmpdir(), "fix7-nonexistent-dir", "l.jsonl") });
+  assert.throws(() => failing.recordBeforeExecution({ tenantId: "t", isolationGroupId: "i", workspaceId: "w", sessionId: "s", turnId: "t", callId: "c", toolName: "x", paramDigest: "p", targetResource: "r" }), /SESSION_SIDECFFECT_LEDGER_WRITE_FAILED/);
+});
+
+test("FIX-8: rpoLayering——未上传尾部量独立暴露（REL-096），无死代码", () => {
+  const result = rpoLayering({ lastUploadedSeq: 5, updatedAt: Date.now(), tenantId: "t1" }, 12);
+  assert.equal(result.inNodeRpo, 0);
+  assert.equal(result.unuploadedSeqs, 7); // 序号差独立暴露，不被 *0 丢弃
+  assert.ok(result.crossNodeRpoSeconds >= 0);
 });

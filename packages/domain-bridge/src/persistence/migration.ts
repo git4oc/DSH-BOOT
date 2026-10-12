@@ -54,11 +54,22 @@ export class MigrationStateMachine {
     }
     if (next === "OWNED") {
       // 步骤 4 断言（preventive，`REL-079`）：不等即拒绝 handoff（防丢尾）。
-      if (this.targetBaseSeq !== this.sourceLastReplicatedSeq) {
-        this.steps.push("handoff-rejected(targetBaseSeq != sourceLastReplicatedSeq)");
+      // 序号来源：优先取本次 transition 的 input，其次取 recordSeqs 已记录值；
+      // **两侧任一未定义即断言失败**（不得因 `undefined !== undefined` 为 false 而空洞通过）。
+      const targetBaseSeq = input.targetBaseSeq ?? this.targetBaseSeq;
+      const sourceLastReplicatedSeq = input.sourceLastReplicatedSeq ?? this.sourceLastReplicatedSeq;
+      if (targetBaseSeq === undefined || sourceLastReplicatedSeq === undefined) {
+        this.steps.push("handoff-rejected(seqs not asserted: targetBaseSeq/sourceLastReplicatedSeq missing)");
         this.state = "FAILED";
         return this.snapshot();
       }
+      if (targetBaseSeq !== sourceLastReplicatedSeq) {
+        this.steps.push(`handoff-rejected(targetBaseSeq ${targetBaseSeq} != sourceLastReplicatedSeq ${sourceLastReplicatedSeq})`);
+        this.state = "FAILED";
+        return this.snapshot();
+      }
+      this.targetBaseSeq = targetBaseSeq;
+      this.sourceLastReplicatedSeq = sourceLastReplicatedSeq;
       this.epoch += 1; // 目标域提交 epoch（步骤 6）；源在 epoch 提升后的 append 被拒（fencing）
     }
     this.steps.push(`${this.state}→${next}`);

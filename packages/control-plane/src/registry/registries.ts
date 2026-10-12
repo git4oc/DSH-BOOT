@@ -23,19 +23,31 @@ export interface RegisteredPlugin {
 
 export class PluginRegistry {
   private readonly plugins = new Map<string, RegisteredPlugin>();
+  /** 回滚审计（`EVO-011` 退役处置：deprecated 标记；D4 注册表 deprecated 字段）。 */
+  public readonly audit: { kind: string; name: string; fromVersion: string; toVersion: string }[] = [];
 
   register(plugin: Omit<RegisteredPlugin, "integrity" | "signature">, artifact: string, signingKey: string): RegisteredPlugin {
-    const integrity = `sha512-${sha256(artifact)}`;
+    // 完整性哈希：标签与算法一致（sha512 摘要；`SEC-011` 制品完整性）。
+    const integrity = `sha512-${sha512(artifact)}`;
     const full: RegisteredPlugin = { ...plugin, integrity, signature: sign(artifact, signingKey) };
     this.plugins.set(`${plugin.name}@${plugin.version}`, full);
     return full;
   }
 
-  /** 回滚（`EVO-020`）：回退到上一版本制品。 */
+  /** 回滚：真实生效——目标版本恢复可用，同 name 其余版本标记 deprecated（`EVO-011`：退役 = 保留定义 + 标记 deprecated）+ 审计。 */
   rollback(name: string, toVersion: string): RegisteredPlugin {
     const plugin = this.plugins.get(`${name}@${toVersion}`);
     if (!plugin) throw new Error(`PLUGIN_VERSION_NOT_FOUND: ${name}@${toVersion}`);
-    return plugin;
+    for (const [key, value] of this.plugins) {
+      if (value.name !== name) continue;
+      const shouldBeDeprecated = value.version !== toVersion;
+      if (value.deprecated !== shouldBeDeprecated) {
+        this.plugins.set(key, { ...value, deprecated: shouldBeDeprecated });
+        this.audit.push({ kind: shouldBeDeprecated ? "plugin.deprecated" : "plugin.restored", name, fromVersion: value.version, toVersion });
+      }
+    }
+    this.audit.push({ kind: "plugin.rollback", name, fromVersion: "", toVersion });
+    return this.plugins.get(`${name}@${toVersion}`) as RegisteredPlugin;
   }
 
   get(name: string, version: string): RegisteredPlugin | undefined {
@@ -87,10 +99,14 @@ export class ConnectorRegistry {
     this.maxExceptionConnectorsPerDomain = maxExceptionConnectorsPerDomain;
   }
 
-  /** 注册：例外（hosting=exception）须安全评审 + 按域硬上限（验收③）。 */
+  /** 注册：同名**拒绝**（作用域内唯一，§5.6——不静默覆盖）；例外（hosting=exception）须安全评审 + 按域硬上限（`SEC-055`）。 */
   register(connector: RegisteredConnector): RegisteredConnector {
     if (!/^[A-Za-z0-9_-]{1,32}$/.test(connector.serverName)) {
       throw new Error("CONNECTOR_NAME_INVALID: serverName 须为 [A-Za-z0-9_-]{1,32} 且作用域内唯一（§5.6）");
+    }
+    if (this.connectors.has(connector.serverName)) {
+      // 同名拒绝：注册表语义为作用域内唯一，改名须走产品变更流程（`PRD-028` 不得静默改名）。
+      throw new Error(`CONNECTOR_NAME_DUPLICATE: ${connector.serverName} 已注册（§5.6 作用域内唯一）`);
     }
     if (connector.hosting === "exception") {
       if (!connector.securityReviewPassed) {
@@ -98,7 +114,7 @@ export class ConnectorRegistry {
       }
       const exceptions = [...this.connectors.values()].filter((c) => c.hosting === "exception").length;
       if (exceptions >= this.maxExceptionConnectorsPerDomain) {
-        throw new Error(`CONNECTOR_EXCEPTION_CAP_EXCEEDED: 例外 connector 超过按域上限 ${this.maxExceptionConnectorsPerDomain}`);
+        throw new Error(`CONNECTOR_EXCEPTION_CAP_EXCEEDED: 例外 connector 超过按域上限 ${this.maxExceptionConnectorsPerDomain}（SEC-055）`);
       }
     }
     // 信任级默认 untrusted（未知即不可信）。
@@ -132,6 +148,8 @@ export interface SkillEntry {
   readonly name: string;
   readonly scope: SkillScope;
   readonly tenantId?: string;
+  /** user 级 Skill 的归属用户（`SEC-105`：user 级不得出现在其他用户的可见集中）。 */
+  readonly userId?: string;
   readonly version: string;
 }
 
@@ -142,13 +160,24 @@ export class SkillCatalog {
     if (entry.scope !== "platform" && !entry.tenantId) {
       throw new Error("SKILL_SCOPE_TENANT_REQUIRED: 租户/用户级 Skill 须绑定租户");
     }
+    if (entry.scope === "user" && !entry.userId) {
+      throw new Error("SKILL_SCOPE_USER_REQUIRED: user 级 Skill 须绑定归属用户（SEC-105）");
+    }
     this.skills.push(entry);
   }
 
-  /** `ENG-063`：按作用域装配 skillRoots（platform 全量 + 租户/用户按归属）。 */
-  assembleSkillRoots(tenantId: string): { readonly skillRoots: readonly string[] } {
+  /**
+   * `ENG-063`：按作用域装配 skillRoots（platform 全量 + 租户按归属 + **user 按归属用户**）。
+   * `SEC-105`：user 级 Skill 只装给归属用户；tenant 级不跨租户；platform 全租户共享。
+   */
+  assembleSkillRoots(tenantId: string, userId?: string): { readonly skillRoots: readonly string[] } {
     const roots = this.skills
-      .filter((s) => s.scope === "platform" || s.tenantId === tenantId)
+      .filter((s) => {
+        if (s.scope === "platform") return true;
+        if (s.tenantId !== tenantId) return false;
+        if (s.scope === "user") return s.userId !== undefined && s.userId === userId;
+        return true;
+      })
       .map((s) => `skill://${s.scope}/${s.name}@${s.version}`);
     return { skillRoots: roots };
   }
@@ -195,6 +224,10 @@ export function generateProfilePatch(input: { presetId: string; plugins: readonl
     removedRows: input.removedRows,
     generatedBy: "profile-generator-out-of-domain",
   };
+}
+
+function sha512(value: string): string {
+  return createHash("sha512").update(value, "utf8").digest("hex");
 }
 
 function sha256(value: string): string {

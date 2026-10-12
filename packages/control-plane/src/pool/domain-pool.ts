@@ -30,6 +30,10 @@ export class IsolationDomainRegistry {
   private readonly domains = new Map<string, DomainAssignment>();
 
   assign(assignment: DomainAssignment): { domainId: string } {
+    // ID 格式校验：拒绝 ":" 注入导致 domainId 歧义碰撞（D5 跨租户永不共享的防御前提）。
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(assignment.tenantId) || !/^[A-Za-z0-9_-]{1,64}$/.test(assignment.isolationGroupId)) {
+      throw new Error("DOMAIN_ID_INVALID: tenantId/isolationGroupId 须为 [A-Za-z0-9_-]{1,64}（D5 防御）");
+    }
     const domainId = `domain:${assignment.tenantId}:${assignment.isolationGroupId}`;
     const existing = this.domains.get(domainId);
     if (existing) {
@@ -74,10 +78,21 @@ export class WorkspaceLeaseService {
     return record;
   }
 
-  /** 可转移租约（§5.4.1）：epoch +1，源域在提升后的写入被 fencing 拒绝。 */
-  transfer(workspaceRoot: string, toDomainId: string): LeaseRecord {
+  /** 可转移租约（§5.4.1；`REL-068`）：仅当前持有域可发起转移，epoch +1，源域在提升后的写入被 fencing 拒绝。 */
+  transfer(workspaceRoot: string, fromDomainId: string, toDomainId: string): LeaseRecord {
     const existing = this.leases.get(workspaceRoot);
-    if (!existing) throw new Error(`WORKSPACE_LEASE_NOT_HELD: ${workspaceRoot}`);
+    if (!existing) {
+      this.audit.push({ kind: "workspace.lease.transfer.denied", workspaceRoot, domainId: fromDomainId });
+      throw new Error(`WORKSPACE_LEASE_NOT_HELD: ${workspaceRoot}`);
+    }
+    if (existing.domainId !== fromDomainId) {
+      // 所有权校验：非当前持有域不得转移（`REL-068` 独占性）。
+      this.audit.push({ kind: "workspace.lease.transfer.denied", workspaceRoot, domainId: fromDomainId });
+      throw new Error(`WORKSPACE_LEASE_NOT_OWNED: ${workspaceRoot} owned by ${existing.domainId}, transfer denied for ${fromDomainId}`);
+    }
+    if (fromDomainId === toDomainId) {
+      throw new Error(`WORKSPACE_LEASE_TRANSFER_SELF: ${workspaceRoot} 转入与转出域相同`);
+    }
     const record: LeaseRecord = { workspaceRoot, domainId: toDomainId, epoch: existing.epoch + 1, acquiredAt: Date.now() };
     this.leases.set(workspaceRoot, record);
     this.audit.push({ kind: "workspace.lease.transferred", workspaceRoot, domainId: toDomainId });
@@ -90,9 +105,15 @@ export class WorkspaceLeaseService {
     return current !== undefined && current.domainId === domainId && current.epoch === epoch;
   }
 
+  /** 释放：仅当前持有域可释放；不匹配/不存在时报错 + 审计（`REL-068`，不静默吞掉）。 */
   release(workspaceRoot: string, domainId: string): void {
     const current = this.leases.get(workspaceRoot);
-    if (current?.domainId === domainId) this.leases.delete(workspaceRoot);
+    if (!current || current.domainId !== domainId) {
+      this.audit.push({ kind: "workspace.lease.release.denied", workspaceRoot, domainId });
+      throw new Error(`WORKSPACE_LEASE_NOT_OWNED: ${workspaceRoot} not held by ${domainId}`);
+    }
+    this.leases.delete(workspaceRoot);
+    this.audit.push({ kind: "workspace.lease.released", workspaceRoot, domainId });
   }
 }
 
@@ -108,13 +129,14 @@ export interface DriftOutcome {
   readonly alert: boolean;
 }
 
-/** 漂移分类（§9.3/§4.1）：生命周期变化（预期）不摘域；未授权漂移（异常）摘域且单独审批。 */
+/** 漂移分类（`SEC-018`）：**先验归属**——Profile 未授权的插件/工具/connector（无论事件类型）一律
+ *  异常漂移，摘域且单独审批；已授权的 connector 生命周期变化（预期）不摘域。 */
 export function classifyDrift(observed: { kind: string; name: string; authorized: boolean }): DriftOutcome {
-  if (observed.kind === "connector-lifecycle") {
-    return { eventClass: "connector-lifecycle", evictDomain: false, requiresSeparateApproval: false, toolUnavailable: true, autoReload: true, alert: true };
-  }
   if (!observed.authorized) {
     return { eventClass: "unauthorized-drift", evictDomain: true, requiresSeparateApproval: true, toolUnavailable: true, autoReload: false, alert: true };
+  }
+  if (observed.kind === "connector-lifecycle") {
+    return { eventClass: "connector-lifecycle", evictDomain: false, requiresSeparateApproval: false, toolUnavailable: true, autoReload: true, alert: true };
   }
   return { eventClass: "connector-lifecycle", evictDomain: false, requiresSeparateApproval: false, toolUnavailable: false, autoReload: false, alert: false };
 }
@@ -214,15 +236,25 @@ export class DomainPool {
     return JSON.parse(readFileSync(join(this.root, `${domainId}.snapshot.json`), "utf8")) as DomainSnapshot;
   }
 
-  /** 冷启动降级（§10.1）：池空按需创建，前端显示**等待页**（非错误码）。 */
+  /** 冷启动降级（§10.1）：池空按需创建，前端显示**等待页**（非错误码）；已热域诚实返回 waitingPage:false。 */
   async coldStart(domainId: string): Promise<{ waitingPage: boolean; state: DomainState }> {
+    if (this.states.get(domainId) === "hot") {
+      // 已热：无需等待页（诚实语义，§10.1）。
+      return { waitingPage: false, state: "hot" };
+    }
     this.states.set(domainId, "zero");
     // 池空：排队并在域就绪后返回等待页语义（不抛错码）。
     return new Promise((resolve) => {
       this.queue.push({ domainId, resolve: (result) => resolve(result) });
-      // 域池预热完成（同步模拟）：回热态并解锁排队。
+      // 域池预热完成（同步模拟）：回热态并只解锁**本域**的排队。
       this.states.set(domainId, "hot");
-      const pending = this.queue.splice(0, this.queue.length);
+      const pending: { domainId: string; resolve: (result: { waitingPage: boolean; state: DomainState }) => void }[] = [];
+      const remaining: { domainId: string; resolve: (result: { waitingPage: boolean; state: DomainState }) => void }[] = [];
+      for (const item of this.queue) {
+        (item.domainId === domainId ? pending : remaining).push(item);
+      }
+      this.queue.length = 0;
+      this.queue.push(...remaining);
       for (const item of pending) item.resolve({ waitingPage: true, state: "hot" });
     });
   }

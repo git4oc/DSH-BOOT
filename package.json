@@ -16,6 +16,7 @@
     "contract:approval": "node tests/contract/src/approval/contract.mjs",
     "contract:ready": "node tests/contract/src/ready/contract.mjs",
     "contract:persistence-l1": "node tests/contract/src/persistence/l1-contract.mjs",
+    "contract:persistence-l2": "node tests/contract/src/persistence/l2-contract.mjs",
     "contract:pool": "node tests/contract/src/pool/contract.mjs",
     "contract:identity-quota": "node tests/contract/src/identity-quota/contract.mjs",
     "contract:registry": "node tests/contract/src/registry/contract.mjs",

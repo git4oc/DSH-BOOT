@@ -9,7 +9,7 @@
   "criticalRowsDigest": "ddc4b0498ad8c5593bc31ff00288d75eefbd4b916e92f9c2cc28f5ef05d92aa2",
   "denylistDigest": "37adc9ae436ef3f765b9f7d0c8d047c794f29020390cb2e51b3e5a5c228a38d0",
   "results": {},
-  "createdAt": "2026-10-07T04:37:16.501Z",
+  "createdAt": "2026-10-12T14:24:01.472Z",
   "retainedAt": "WORM://evidence/GATE-002/domain-evidence/gate002-domain-2/",
-  "chainHash": "e18320d06ae6a2f953c12c48126f8c2844253890309e6bd71b983df2c30504d6"
+  "chainHash": "b9f8bc768d18b4b20536d59c61c24ff13d1fd09827420d52a0144e134c5f1414"
 }

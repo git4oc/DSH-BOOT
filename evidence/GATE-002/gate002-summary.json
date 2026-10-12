@@ -1,6 +1,6 @@
 {
   "gate": "GATE-002",
-  "ranAt": "2026-10-07T04:37:16.554Z",
+  "ranAt": "2026-10-12T14:24:01.547Z",
   "conditions": [
     {
       "gate": "GATE-002",
@@ -25,8 +25,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "8ddfe9f69da1ca59c0b00025deaa365c11be79a1bbf122a3ef574edda95b02ad"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "3b835fe0bedd7b3df50e2f86bfbd2ad95d8815066e7ceb4011639bb7799f0588"
     },
     {
       "gate": "GATE-002",
@@ -51,8 +51,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "c60450e345b3551c18eb6801ce5597fd5087c5292aab89e51afb5b55b39a6a85"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "1e41b145befe6b29efb17460656621f7f8e2c2dd010c163cba8bf5c961b200e5"
     },
     {
       "gate": "GATE-002",
@@ -77,8 +77,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "b4a6fcc53e9edde73a48ab1cde6adaed5d382e926d6367b04c8d7a7e0f9aebe2"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "ad6adf2e11d69bfe13f281135a331f5a8d395e7dfdb367628eab08f07bef4be1"
     },
     {
       "gate": "GATE-002",
@@ -86,7 +86,7 @@
       "scopeId": "dev-tenant+dev-isolation",
       "case": "C4",
       "input": "每次域创建调用 createDomainEvidence（四类摘要非空）× 2 + verifyChain",
-      "observation": "四类摘要非空=true，每次域创建留证（2 条）=true，哈希链校验通过=true",
+      "observation": "四类摘要非空（逐条校验）=true，每次域创建留证（2 条）=true，哈希链校验通过=true",
       "verdict": "pass",
       "source": {
         "authority": "域外证据工件（镜像/挂载/运行时配置/Profile 生成摘要）"
@@ -94,7 +94,7 @@
       "artifactHashes": [
         {
           "path": "evidence/GATE-002/C4/domain-evidence/gate002-domain-2/record.json",
-          "hash": "2999824fb189cc4e3909efda6846279a908ecfe990e881d574efc69416b7ed2f"
+          "hash": "2473691ce795592ded6a42ef6185411eb24decc3a0401dfecdac0e6b52ab9fd4"
         },
         {
           "path": "evidence/GATE-002/C4/chain-verify.json",
@@ -103,8 +103,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "3134e6e82ce7c5ceddcaf7b92b6a61143b2e13872875c48190aa170639e76c48"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "a9b5c1c1fe25a05da5bcf3b9f2050379b2f40464ed975ff0ec2e873031badf45"
     },
     {
       "gate": "GATE-002",
@@ -129,8 +129,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "e72928741f79dad0567b59dcb95891e3106729de8de1497ba198e9d52e4edaf5"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "13c17d928ef87c117c8e4abc95b5f6a8c1ec19c2806962cb2fa879d2c11f5250"
     },
     {
       "gate": "GATE-002",
@@ -138,7 +138,7 @@
       "scopeId": "dev-tenant+dev-isolation",
       "case": "C6",
       "input": "缺归因头 POST 四个 LLM 端点；A 域令牌以 B 租户身份校验",
-      "observation": "四端点全部 400=true（{\"/internal/kernel/llm/stream\":400,\"/internal/kernel/llm/models\":400,\"/internal/kernel/llm/resolve-model\":400,\"/internal/kernel/llm/prepare-call\":400}）；跨租户冒用被拒且产生硬审计=false",
+      "observation": "四端点全部 400=true（{\"/internal/kernel/llm/stream\":400,\"/internal/kernel/llm/models\":400,\"/internal/kernel/llm/resolve-model\":400,\"/internal/kernel/llm/prepare-call\":400}）；跨租户冒用被拒且产生硬审计（token.cross_tenant_rejected 入账 2 条）=true",
       "verdict": "pass",
       "source": {
         "authority": "域外网关配置与校验日志（反向网关桩域外判定）"
@@ -150,13 +150,13 @@
         },
         {
           "path": "evidence/GATE-002/C6/token-cross-tenant.json",
-          "hash": "28733069e68845c68a9423b6fe811ee1183f981862d766bb069a396b1b93106d"
+          "hash": "5d038c656e737eb318017d1c9fee02b596d6f43863e426d51942b41f913905a6"
         }
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "6c8520860bcd82ee677a2ebb309cf817a7e8e9ccdb74d45809cc790dfd6b30e3"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "740bb76a5581aa4e96b206c9e2f0c8a731763b42b5743e45036b9f509410ac6c"
     },
     {
       "gate": "GATE-002",
@@ -177,8 +177,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "6bde256c8a86a9a65bd68bc60f7fe25fef90bec5fa2f291b28a9d878a15bf4db"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "bd577d795a61f2c459da79d5b2162df9b275ccb764b8f24b7e81eac597c3772f"
     },
     {
       "gate": "GATE-002",
@@ -203,8 +203,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "b84b74aa05ed2bd6504c2a8ed1fa74b78d1e5f3e863b3bf16baa374f03d4c1c3"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "b51f184a9b276d6f493eb04760d95e6089f172c7d699325d8cb0d01640cf8632"
     },
     {
       "gate": "GATE-002",
@@ -225,8 +225,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "845f68a339045e1a0ab33215b62fae416c7764634006a5bff18b0e107fc1b4f5"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "79004584be92a4e2fb64cb95b8dc9168767f013fe6f8f6e791bb4387c284dfb4"
     },
     {
       "gate": "GATE-002",
@@ -247,8 +247,8 @@
       ],
       "implementer": "P0-A6 build agent（单会话）",
       "checker": "pending（人工复核签署，G-R4：判定人 ≠ 实现者）",
-      "ranAt": "2026-10-07T04:37:16.554Z",
-      "chainHash": "6f6c3a98fafef30951d93720afde3d0154241a71fe48b150ed1cf1d2a78a6037"
+      "ranAt": "2026-10-12T14:24:01.547Z",
+      "chainHash": "52301d6d31c094a9065b191d017f55a057a3c918221d6c6dbd15d0ba76636b92"
     }
   ],
   "conclusion": "fail",

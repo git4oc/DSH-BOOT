@@ -79,11 +79,12 @@ export class SplitBuffer {
   private evictExpired(now: number): void {
     const cutoff = now - this.options.bufferSeconds * 1000;
     while (this.queue.length > 0 && this.queue[0].enqueuedAt < cutoff) {
-      this.queue.shift();
+      // 墓碑归属被驱逐条目**自身**的租户（先取后删，不得错位到下一条）
+      const evicted = this.queue.shift()!;
       const tombstone: Tombstone = {
         kind: "buffer.dropped",
         level: this.options.level,
-        tenantId: this.queue.length > 0 ? this.queue[0].tenantId : "unknown",
+        tenantId: evicted.tenantId,
         dropped: 1,
         reconciled: false,
         at: now,
