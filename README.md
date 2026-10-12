@@ -201,6 +201,12 @@ node tools/validate-contracts.mjs && node tools/lint-docs.mjs
 - [规格总纲](spec/00-规格总纲.md) — 规格集入口
 - [故障域矩阵](docs/reliability/failure-domain-matrix.md) / [降级阶梯](docs/reliability/degradation-ladder.md) / [DSR 清单](docs/security/dsr-inventory-and-proof.md)
 
+## 交流群
+
+扫码加入「dsh 企业应用开发技术」微信群，一起讨论 DSH 与 DSH-BOOT 的使用与开发（二维码 10 月 19 日前有效，过期后重新生成）：
+
+![dsh 企业应用开发技术微信群](docs/assets/wechat-group-qr.jpg)
+
 ## License
 
 [MIT](LICENSE)
